@@ -1,4 +1,7 @@
 from flask import redirect, session
+from sqlalchemy import create_engine, Column, Integer, DateTime, ForeignKey, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 from functools import wraps
 import requests
 import uuid
@@ -22,6 +25,70 @@ img_folder =  os.path.join(local_folder_path, "team-logos")
 
 # Control the update mechanism of the database concerning the openliga updates
 automatic_updates = False
+
+engine = create_engine('sqlite:///tippspiel.db', echo=True)
+Session_db = sessionmaker(bind=engine)
+session_db = Session_db()  
+
+Base = declarative_base()
+
+class Match(Base):
+    __tablename__ = 'matches'
+
+    id = Column(Integer, primary_key=True)
+    matchday = Column(Integer)
+    team1_id = Column(Integer, ForeignKey('teams.id'), nullable=False)
+    team2_id = Column(Integer, ForeignKey('teams.id'), nullable=False)
+    team1_score = Column(Integer)
+    team2_score = Column(Integer)
+    matchDateTime = Column(DateTime)
+    matchIsFinished = Column(Integer)
+    location = Column(String)
+    lastUpdateDateTime = Column(DateTime)
+    predictions_evaluated = Column(Integer, default=0)
+    evaluation_Date = Column(DateTime)
+
+    # Define relationships
+    team1 = relationship("Team", foreign_keys=[team1_id])
+    team2 = relationship("Team", foreign_keys=[team2_id])
+
+class Team(Base):
+    __tablename__ = 'teams'
+
+    id = Column(Integer, primary_key=True)
+    teamName = Column(String)
+    shortName = Column(String)
+    teamIconUrl = Column(String)
+    teamIconPath = Column(String)
+    teamGroupName = Column(String, default='None')
+    points = Column(Integer, default=0)
+    opponentGoals = Column(Integer, default=0)
+    goals = Column(Integer, default=0)
+    matches = Column(Integer, default=0)
+    won = Column(Integer, default=0)
+    lost = Column(Integer, default=0)
+    draw = Column(Integer, default=0)
+    goalDiff = Column(Integer, default=0)
+    rank = Column(Integer)
+    lastUpdateTime = Column(DateTime)
+
+class Prediction(Base):
+    __tablename__ = 'predictions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    matchday = Column(Integer, nullable=False)
+    match_id = Column(Integer, nullable=False)
+    team1_score = Column(Integer, nullable=False)
+    team2_score = Column(Integer, nullable=False)
+    goal_diff = Column(Integer, nullable=False)
+    winner = Column(Integer, nullable=False)
+    prediction_date = Column(DateTime)
+    points = Column(Integer, default=0)
+
+    # Define relationship
+    user = relationship("User", back_populates="predictions")
+
 
 def get_local_matches():
     matches_db = db.execute("""
@@ -452,23 +519,20 @@ def get_insights():
     return insights
 
 def is_update_needed_league_table():
-    # If table is empty, fill matches table
-    empty_check_db  = db.execute("SELECT * FROM teams")
+    # If table is empty, fill teams table
+    empty_check_db = session_db.query(Team).all()
 
     if not empty_check_db:
-        insert_teams_to_db()
+        #insert_teams_to_db()
+        pass
 
     # Get current matchday by online query (returns the upcoming matchday after the middle of the week)
     current_matchday = get_current_matchday_openliga()
 
     # Get current matchday of the local database
-    current_match_db = db.execute("""
-                                     SELECT matches AS matchday, lastUpdateTime FROM teams
-                                     ORDER BY matches DESC
-                                     LIMIT 1;
-                                     """)
+    current_match_db = session_db.query(Team.matches, Team.lastUpdateTime).order_by(Team.matches.desc()).first()
     
-    if current_matchday > current_match_db[0]["matchday"] + 1:  # +1 bcs of the current matchday calc. by openliga
+    if current_matchday > current_match_db.matches:  # +1 bcs of the current matchday calc. by openliga
         return True
 
     # Return last update times if the matchday is equal or + 1 ahead
@@ -476,7 +540,7 @@ def is_update_needed_league_table():
          # Get last update time of the online matchdata
         lastUpdateTime_openliga = get_last_online_change(current_matchday)
 
-        lastUpdateTime_db = current_match_db[0]["lastUpdateTime"]
+        lastUpdateTime_db = current_match_db.lastUpdateTime
         
         if lastUpdateTime_db:
             # Convert dates to comparable format
