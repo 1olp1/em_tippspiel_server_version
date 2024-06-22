@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Tippen
+{% endblock %}
+
+{% block main %}
+
+    <div id="page-content"></div>
+    
+    <nav aria-label="Page navigation example">
+        <ul class="pagination justify-content-center">
+        <li class="page-item active" data-page="1. Spieltag"><a class="page-link" href="#">1. Spieltag</a></li>
+        <li class="page-item" data-page="2. Spieltag"><a class="page-link" href="#">2. Spieltag</a></li>
+        <li class="page-item" data-page="3, Spieltag"><a class="page-link" href="#">3. Spieltag</a></li>
+        <li class="page-item" data-page="3, Spieltag"><a class="page-link" href="#">AF</a></li>
+        <li class="page-item" data-page="3, Spieltag"><a class="page-link" href="#">VF</a></li>
+        <li class="page-item" data-page="3, Spieltag"><a class="page-link" href="#">HF</a></li>
+        <li class="page-item" data-page="3, Spieltag"><a class="page-link" href="#">F</a></li>
+
+        </ul>
+    </nav>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+      $(document).ready(function() {
+        function loadPage(page) {
+          $('#page-content').load(page + '.html');
+          $('.page-item').removeClass('active');
+          $('.page-item[data-page=' + page + ']').addClass('active');
+        }
+    
+        loadPage('page1'); // Load the first page by default
+    
+        $('.page-item[data-page]').click(function(e) {
+          e.preventDefault();
+          var page = $(this).data('page');
+          loadPage('spieltag' + page);
+        });
+    
+        $('#prev-page').click(function(e) {
+          e.preventDefault();
+          var currentPage = $('.page-item.active').data('page');
+          if (currentPage > 1) {
+            loadPage('page' + (currentPage - 1));
+          }
+        });
+    
+        $('#next-page').click(function(e) {
+          e.preventDefault();
+          var currentPage = $('.page-item.active').data('page');
+          if (currentPage < 3) { // Change 3 to the number of pages you have
+            loadPage('page' + (currentPage + 1));
+          }
+        });
+      });
+    </script>
+</body>
+</html>
+{% endblock %}

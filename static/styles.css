@@ -1,0 +1,148 @@
+/* General Styling */
+body {
+    background-color: #e0e2eb;
+    font-family: 'Nunito', sans-serif;
+    color: #19303B; /* Default text color */
+}
+
+h1, h2, h3, h4, h5, h6, p {
+    color: #19303B; /* Blue color */
+}
+
+/* Navbar Styling */
+nav .navbar-brand {
+    font-size: xx-large;
+    margin: 0 30px 0 20px;
+}
+
+nav .navbar-brand .blue {
+    color: #ffffff;
+}
+
+.navbar {
+    background-color: #20338a;
+    border-bottom: 8px solid #1668ff;
+}
+
+.navbar-nav .nav-link {
+    font-size: 18px;
+    margin-right: 20px;
+    color: #ffffff;
+}
+
+/* Table Styling */
+.table {
+    margin-bottom: 10px; /* Adds bottom margin between tables */
+    width: 100%;
+}
+
+.table-bordered {
+    border-collapse: collapse;
+}
+
+.table-bordered td, .table-bordered th {
+    border: 1px solid #455769;
+}
+
+.table th {
+    font-size: 17px; /* Font size for table headers */
+    font-weight: bold; /* Make table headers bold */
+    background-color: #ffffff; /* Background color for headers */
+    color:#19303B;
+}
+
+.table td {
+    font-size: 16px; /* Font size for table cells */
+    vertical-align: middle;
+    white-space: nowrap;
+    color:#19303B;
+}
+
+
+/* Special Columns */
+.custom-column-1 {
+    width: 2%; /* Width of column 1 */
+}
+
+/* Headers */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    background-color: #fff; /* Ensure background color for sticky effect */
+    border-bottom: 2px solid #19303B; /* Border at the bottom of header */
+}
+
+.bottom-border {
+    border-bottom: 1px solid #19303B; /* Border at the bottom */
+}
+
+/* Logo Styling */
+.team-logo, .team-logo-small {
+    object-fit: cover;
+    border-radius: 50%; /* Rounded corners */
+    border: 1px solid #cfcece;
+}
+
+.team-logo {
+    width: 34px;
+    height: 34px;
+}
+
+.team-logo-small {
+    width: 20px;
+    height: 20px;
+}
+
+/* Alignment Classes */
+.text-center {
+    text-align: center;
+}
+
+.text-left {
+    text-align: left;
+}
+
+.text-right {
+    text-align: right;
+}
+
+/* Additional Classes */
+.table-wrapper {
+    max-height: 700px;
+    overflow: auto;
+    display: inline-block;
+}
+
+.score-input {
+    width: 43px; /* Adjust width as needed */
+    text-align: center; /* Center text within input */
+}
+
+.btn-container {
+    text-align: right;
+    margin-top: 10px; /* Adjust as needed */
+}
+
+.last-update {
+    font-size: 14px;
+    text-align: left;
+    margin-top: 10px;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.page-content {
+    display: none;
+}
+
+.page-content.active {
+    display: block;
+}
+
+.team-name {
+    font-weight: bold; /* Make team names bold */
+}

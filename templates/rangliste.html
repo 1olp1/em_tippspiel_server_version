@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Rangliste
+{% endblock %}
+
+{% block main %}
+<div class="text-center">
+    <div class="table-responsive" style="max-width: 1000px;">
+        <table class="table rounded-4 overflow-hidden">
+            <thead>
+                <tr>
+                    <th colspan="2" class="text-left">Spieltag</th>
+                    {% for match in matchdata %}
+                        {% if match.matchday <= 3 %}
+                            <td>{{ match.matchday }}.</td>
+                        {% else %}
+                            <td>
+                                {% if match.matchday == 4 %} AF
+                                {% elif match.matchday == 5 %} VF
+                                {% elif match.matchday == 6 %} HF
+                                {% elif match.matchday == 7 %} Finale
+                                {% endif %}
+                            </td>
+                        {% endif %}
+                    {% endfor %}
+                    <td colspan="4"></td>
+                </tr>
+                <tr>
+                    <th colspan="2" class="text-left">Begegnung</th>
+                    {% for match in matchdata %}
+                        <td>
+                            <img src="{{ match.team1IconPath }}" alt="{{ match.team1_shortName }}-logo" class="team-logo-small">
+                            <span>&nbsp;:&nbsp;</span>
+                            <img src="{{ match.team2IconPath }}" alt="{{ match.team2_shortName }}-logo" class="team-logo-small">
+                        </td>
+                    {% endfor %}
+                    <td colspan="4"></td>
+                </tr>
+                <tr class="bottom-border">
+                    <th colspan="2" class="text-left">Ergebnis</th>
+                    {% for match in matchdata %}
+                        <td>
+                            {% if match.team1_score is not none %}
+                                {{ match.team1_score }}:{{ match.team2_score }}
+                            {% else %}
+                                -:-
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                    <td>4 P.</td>
+                    <td>3 P.</td>
+                    <td>2 P.</td>
+                    <td>Ges.</td>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                    <tr class="{% if user.id == user_id %}table-primary{% endif %}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ user.username }}</td>
+                        {% for match in matchdata %}
+                            {% set prediction = user.predictions|selectattr("match_id", "equalto", match.id)|first %}
+                            <td>
+                                {% if prediction %}
+                                    {% if match.matchIsFinished or (next_match and next_match.is_live and next_match.id == match.id) or user.id == user_id %}
+                                        {{ prediction.team1_score }}:{{ prediction.team2_score }}
+                                        {% if match.predictions_evaluated == 1 %}
+                                            <sub>{{ prediction.points }}</sub>
+                                        {% else %}
+                                            <sub>?</sub>
+                                        {% endif %}
+                                    {% else %}
+                                        -:-
+                                    {% endif %}
+                                {% else %}
+                                    -:-
+                                {% endif %}
+                            </td>
+                        {% endfor %}
+                        <td>{{ user.correct_result }}</td>
+                        <td>{{ user.correct_goal_diff }}</td>
+                        <td>{{ user.correct_tendency }}</td>
+                        <td>{{ user.total_points }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="last-update" style="display: flex; justify-content: space-between;">
+        <p>Stand: {{ last_update }}</p>
+    </div>
+</div>
+{% endblock %}
