@@ -5,7 +5,6 @@ import uuid
 import os
 from PIL import Image
 from datetime import datetime
-from cs50 import SQL
 
 # Prepare API requests
 league = "em"      # bl1 for 1. Bundesliga
@@ -20,9 +19,6 @@ url_teams = f"https://api.openligadb.de/getavailableteams/{league}/{season}"
 # Folder paths
 local_folder_path = os.path.join(".", "static", league, season)
 img_folder =  os.path.join(local_folder_path, "team-logos")
-
-# Connect to the SQLite database
-db = SQL("sqlite:///tippspiel.db")
 
 # Control the update mechanism of the database concerning the openliga updates
 automatic_updates = False
