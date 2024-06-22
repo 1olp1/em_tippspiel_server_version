@@ -1,9 +1,11 @@
 from flask import Flask, flash, redirect, render_template, request, session
 from flask_session import Session
+from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 from werkzeug.security import check_password_hash, generate_password_hash
 from helpers import login_required, get_matches, get_league_table, get_current_datetime_str, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, get_teams, convert_iso_to_datetime_without_decimals
 from datetime import datetime, timedelta
-from cs50 import SQL
 
 # Configure application
 app = Flask(__name__)
@@ -17,8 +19,22 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-# Connect to the SQLite database
-db = SQL("sqlite:///tippspiel.db")
+engine = create_engine('sqlite:///tippspiel.db', echo=True)
+Session_db = sessionmaker(bind=engine)
+session_db = Session_db()  
+
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False)
+    hash = Column(String, nullable=False)
+    total_points = Column(Integer, default=0)
+    correct_result = Column(Integer, default=0)
+    correct_goal_diff = Column(Integer, default=0)
+    correct_tendency = Column(Integer, default=0)
 
 
 @app.after_request
@@ -189,8 +205,11 @@ def login():
 
     # User reached route via POST (as by submitting a form via POST)
     if request.method == "POST":
-        # Ensure username and password was submitted
-        if not request.form.get("username") or not request.form.get("password"):
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        # Ensure username and password were submitted
+        if not username or not password:
             flash("Benutzername/Passwort fehlt", "error")
             return redirect("/login")
         
@@ -198,21 +217,15 @@ def login():
         session.clear()
 
         # Query database for username
-        rows = db.execute(
-            "SELECT * FROM users WHERE username = ?", request.form.get("username")
-        )
+        user = session_db.query(User).filter_by(username=username).first()
 
-        # Ensure username exists and password is correct
-        if len(rows) != 1 or not check_password_hash(
-            rows[0]["hash"], request.form.get("password")
-        ):
+        # Check if user exists and password is correct
+        if not user or not check_password_hash(user.hash, password):
             flash("Ungültiger Benutzername und/oder Passwort", 'error')
             return redirect("/login")
 
         # Remember which user has logged in
-        session["user_id"] = rows[0]["id"]
-
-
+        session["user_id"] = user.id
 
         print("Is update needed for the league table?")
         try:
@@ -229,24 +242,26 @@ def login():
             print(f"Updating league table failed: {e}")
 
 
-        # Update database
-        print("Is update needed for the matches db?")
+        
+        # Update league table and match data if needed
+        """     try:
+            if is_update_needed_league_table():
+                print("Yes. Updating league table...")
+                update_league_table()
+                print("League table update finished.")
 
-        try:
             if is_update_needed_matches():
-                print("Yes, updating...")
+                print("Yes. Updating matches database...")
                 update_matches_db()
-                print("Updating done.")
 
-                # Updating user scores
+                # Update user scores
                 print("Updating user scores...")
                 update_user_scores()
-                print("Scores done.")
-            else:
-                print("No update needed.")
+                print("User scores update finished.")
 
         except Exception as e:
-            print(f"Updating matches failed: {e}")
+            print(f"Update failed: {e}")
+            """
 
 
         # Redirect user to home page
@@ -273,8 +288,6 @@ def logout():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    """Register user"""
-
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
@@ -283,14 +296,10 @@ def register():
         if not username:
             flash("Kein Benutzername angegeben", 'error')
             return redirect("/register")
-        
-        # Query database for username
-        rows = db.execute(
-            "SELECT * FROM users WHERE username = ?", username
-        )
 
         # Check if username already exists
-        if len(rows) == 1:
+        existing_user = session_db.query(User).filter_by(username=username).first()
+        if existing_user:
             flash("Benutzername bereits vergeben", 'error')
             return redirect("/register")
 
@@ -299,13 +308,17 @@ def register():
             flash("Passwörter fehlen oder stimmen nicht überein", 'error')
             return redirect("/register")
 
-        # Hash the pw
+        # Hash the password
         hashed_pw = generate_password_hash(password)
 
-        # Insert user into database
-        db.execute("INSERT INTO users (username, hash) VALUES(?, ?)", username, hashed_pw)
+        # Create a new User object
+        new_user = User(username=username, hash=hashed_pw)
 
-        # Show message
+        # Add new user to session and commit to database
+        session_db.add(new_user)
+        session_db.commit()
+
+        # Show success message
         flash("Erfolgreich registriert!", 'success')
 
         return redirect("/")
