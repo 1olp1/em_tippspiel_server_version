@@ -26,7 +26,7 @@ img_folder =  os.path.join(local_folder_path, "team-logos")
 # Control the update mechanism of the database concerning the openliga updates
 automatic_updates = False
 
-engine = create_engine('sqlite:////tippspiel.db', echo=True)
+engine = create_engine('sqlite:///tippspiel.db', echo=True)
 Session_db = sessionmaker(bind=engine)
 session_db = Session_db()  
 

@@ -10,16 +10,13 @@ from models import User, Base
 # Configure application
 app = Flask(__name__)
 
-# Configure http headers for correct image loading
-headers={"Accept": "*/*", "User-Agent": "python-requests"}
-
 # Configure session to use filesystem (instead of signed cookies)
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
 # Use an absolute path or correct relative path to the SQLite database
-DATABASE_URL = 'sqlite:////tippspiel.db'
+DATABASE_URL = 'sqlite:///tippspiel.db'
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session_db = Session()
