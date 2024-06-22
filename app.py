@@ -1,15 +1,14 @@
 from flask import Flask, flash, redirect, render_template, request, session
 from flask_session import Session
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from werkzeug.security import check_password_hash, generate_password_hash
 from helpers import login_required, get_matches, get_league_table, get_current_datetime_str, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, get_teams, convert_iso_to_datetime_without_decimals
 from datetime import datetime, timedelta
+from models import User, Base
 
 # Configure application
 app = Flask(__name__)
-
 
 # Configure http headers for correct image loading
 headers={"Accept": "*/*", "User-Agent": "python-requests"}
@@ -19,23 +18,11 @@ app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 
-engine = create_engine('sqlite:///tippspiel.db', echo=True)
-Session_db = sessionmaker(bind=engine)
-session_db = Session_db()  
-
-Base = declarative_base()
-
-class User(Base):
-    __tablename__ = 'users'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String, unique=True, nullable=False)
-    hash = Column(String, nullable=False)
-    total_points = Column(Integer, default=0)
-    correct_result = Column(Integer, default=0)
-    correct_goal_diff = Column(Integer, default=0)
-    correct_tendency = Column(Integer, default=0)
-
+# Use an absolute path or correct relative path to the SQLite database
+DATABASE_URL = 'sqlite:////tippspiel.db'
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
+session_db = Session()
 
 @app.after_request
 def after_request(response):
@@ -232,7 +219,7 @@ def login():
 
             if is_update_needed_league_table():
                 print("Yes. Updating...")
-                update_league_table()
+                #update_league_table()
                 print("Update finished.")
 
             else:
