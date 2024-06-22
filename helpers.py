@@ -1,5 +1,5 @@
 from flask import redirect, session
-from sqlalchemy import create_engine, Column, Integer, DateTime, ForeignKey, String
+from sqlalchemy import create_engine, Column, Integer, DateTime, ForeignKey, String, func, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 from functools import wraps
@@ -32,13 +32,29 @@ session_db = Session_db()
 
 Base = declarative_base()
 
+Base.metadata.create_all(engine)
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False)
+    hash = Column(String, nullable=False)
+    total_points = Column(Integer, default=0)
+    correct_result = Column(Integer, default=0)
+    correct_goal_diff = Column(Integer, default=0)
+    correct_tendency = Column(Integer, default=0)
+
+    # Define relationship to Prediction
+    predictions = relationship("Prediction", back_populates="user")
+
 class Match(Base):
     __tablename__ = 'matches'
 
     id = Column(Integer, primary_key=True)
     matchday = Column(Integer)
-    team1_id = Column(Integer, ForeignKey('teams.id'), nullable=False)
-    team2_id = Column(Integer, ForeignKey('teams.id'), nullable=False)
+    team1_id = Column(Text, ForeignKey('teams.id'), nullable=False)  # Changed to Text
+    team2_id = Column(Text, ForeignKey('teams.id'), nullable=False)  # Changed to Text
     team1_score = Column(Integer)
     team2_score = Column(Integer)
     matchDateTime = Column(DateTime)
@@ -88,7 +104,6 @@ class Prediction(Base):
 
     # Define relationship
     user = relationship("User", back_populates="predictions")
-
 
 def get_local_matches():
     matches_db = db.execute("""
@@ -455,68 +470,79 @@ def download_and_resize_logos(teams):
 
 
 def get_insights():
-    predictions_rated = db.execute("""
-                                SELECT COUNT(*) AS predictions_rated
-                                FROM predictions AS p
-                                JOIN matches AS m ON m.id = p.match_id
-                                WHERE p.user_id = ?
-                                AND m.matchIsFinished = 1
-                                """, session["user_id"])
-    
-    prediction_count = db.execute("SELECT COUNT(*) AS prediction_count FROM predictions AS p WHERE p.user_id = ?", session["user_id"])
-    
-    # Get some base data for statistics
-    finished_matches = db.execute("SELECT COUNt(*) AS completed_matches FROM matches WHERE matchIsFinished = 1")
-    total_points_user = db.execute("SELECT total_points FROM users WHERE id = ?", session["user_id"])
-    rank = db.execute("""
-                      SELECT rank
-                      FROM (SELECT id, ROW_NUMBER() 
-                      OVER (
-                        ORDER BY total_points DESC) AS rank
-                        FROM users
-                      ) AS ranked_users
-                      WHERE id = ?
-                      """, session["user_id"])    # This query was created with help from chatgpt
-    
-    base_stats = db.execute("SELECT correct_result, correct_goal_diff, correct_tendency FROM users WHERE id = ?", session["user_id"])[0]
-    no_users = db.execute("SELECT COUNT(*) AS no_users FROM users")[0]["no_users"]
+    user_id = session["user_id"]
+
+    # Predictions rated
+    predictions_rated = session_db.query(func.count(Prediction.id).label('predictions_rated'))\
+        .join(Match, Match.id == Prediction.match_id)\
+        .filter(Prediction.user_id == user_id, Match.matchIsFinished == 1)\
+        .scalar()
+
+    # Prediction count
+    prediction_count = session_db.query(func.count(Prediction.id).label('prediction_count'))\
+        .filter(Prediction.user_id == user_id)\
+        .scalar()
+
+    # Finished matches
+    finished_matches = session_db.query(func.count(Match.id).label('completed_matches'))\
+        .filter(Match.matchIsFinished == 1)\
+        .scalar()
+
+    # Total points of the user
+    total_points_user = session_db.query(User.total_points).filter(User.id == user_id).scalar()
+
+    # User rank
+    subquery = session_db.query(
+        User.id,
+        func.row_number().over(order_by=User.total_points.desc()).label('rank')
+    ).subquery()
+
+    rank = session_db.query(subquery.c.rank).filter(subquery.c.id == user_id).scalar()
+
+    # Base statistics for the user
+    base_stats = session_db.query(User.correct_result, User.correct_goal_diff, User.correct_tendency)\
+        .filter(User.id == user_id).first()
+
+    # Number of users
+    no_users = session_db.query(func.count(User.id).label('no_users')).scalar()
 
     # Store the statistics in the insights dictionary
     insights = {}
 
     # If there have been predictions, count how many were made
     if predictions_rated:
-        insights["predictions_rated"] = predictions_rated[0]['predictions_rated']
+        insights["predictions_rated"] = predictions_rated
     else:
         insights["predictions_rated"] = 0
 
     # Create useful statistics and store in insights dict    
-    insights["total_games_predicted"] = prediction_count[0]["prediction_count"]
-    insights["missed_games"] = finished_matches[0]["completed_matches"] - predictions_rated[0]['predictions_rated']    
-    insights["total_points"] = total_points_user[0]["total_points"]
-    insights["username"] = db.execute("SELECT username FROM users WHERE id = ?", session["user_id"])[0]["username"]
+    insights["total_games_predicted"] = prediction_count
+    insights["missed_games"] = finished_matches - predictions_rated    
+    insights["total_points"] = total_points_user
+    insights["username"] = session_db.query(User.username).filter(User.id == user_id).scalar()
     insights["no_users"] = no_users
-    insights["rank"] = rank[0]["rank"]
-    insights["corr_result"] = base_stats["correct_result"]
-    insights["corr_goal_diff"] = base_stats["correct_goal_diff"]
-    insights["corr_tendency"] = base_stats["correct_tendency"]
+    insights["rank"] = rank
+    insights["corr_result"] = base_stats.correct_result
+    insights["corr_goal_diff"] = base_stats.correct_goal_diff
+    insights["corr_tendency"] = base_stats.correct_tendency
     insights["wrong_predictions"] = insights["predictions_rated"] - insights["corr_result"] - insights["corr_goal_diff"] - insights["corr_tendency"]
 
     # Differentiate if predictions have been rated to avoid dividing by 0 for the percentage
     if insights["predictions_rated"] != 0:
-        insights["corr_result_p"] = round((base_stats["correct_result"] / insights["predictions_rated"])*100)
-        insights["corr_goal_diff_p"] = round(base_stats["correct_goal_diff"] / insights["predictions_rated"]*100)
-        insights["corr_tendency_p"] = round(base_stats["correct_tendency"] / insights["predictions_rated"]*100)
+        insights["corr_result_p"] = round((base_stats.correct_result / insights["predictions_rated"])*100)
+        insights["corr_goal_diff_p"] = round(base_stats.correct_goal_diff / insights["predictions_rated"]*100)
+        insights["corr_tendency_p"] = round(base_stats.correct_tendency / insights["predictions_rated"]*100)
         insights["wrong_predictions_p"] = round(insights["wrong_predictions"] / insights["predictions_rated"]*100) 
-        insights["points_per_tip"] = round(total_points_user[0]["total_points"] / insights["predictions_rated"], 2)
+        insights["points_per_tip"] = round(total_points_user / insights["predictions_rated"], 2)
     else:
         insights["corr_result_p"] = 0
         insights["corr_goal_diff_p"] = 0
         insights["corr_tendency_p"] = 0
         insights["wrong_predictions_p"] = 0
         insights["points_per_tip"] = 0
-    
+
     return insights
+
 
 def is_update_needed_league_table():
     # If table is empty, fill teams table
