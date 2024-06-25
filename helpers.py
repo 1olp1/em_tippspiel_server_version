@@ -1,5 +1,5 @@
 from flask import redirect, session
-from sqlalchemy import func, text
+from sqlalchemy import func, text, desc, asc
 from sqlalchemy.orm import aliased
 from functools import wraps
 import requests
@@ -77,13 +77,8 @@ def get_league_table():
         if is_update_needed_league_table():
             update_league_table()
         
-
-    table = db.execute("""SELECT * FROM teams
-                       ORDER BY teamRank ASC
-                       """)
+    table = session_db.query(Team).order_by(Team.teamRank.asc()).all()
     
-    table[0]["lastUpdateTime"] = convert_iso_datetime_to_human_readable(table[0]["lastUpdateTime"])
-
     return table
         
 
@@ -175,15 +170,15 @@ def update_user_scores():
             for prediction in predictions:
                 if team1_score == prediction.team1_score and team2_score == prediction.team2_score:
                     prediction.points = 4
-                elif goal_diff == prediction.goal_diff:
+                elif goal_diff == prediction.goal_diff and winner != 0:
                     prediction.points = 3
-                elif winner == prediction.winner:
+                elif winner == prediction.winner or goal_diff == prediction.goal_diff and winner == 0:
                     prediction.points = 2
                 else:
                     prediction.points = 0
 
             # Update match evaluation status
-            match.predictions_evaluated = 1
+            #match.predictions_evaluated = 1
             match.evaluation_Date = get_current_datetime_as_object()
 
     # Update total points in the users table (Query with help from chatGPT)
@@ -532,39 +527,40 @@ def resize_image(image_path, max_size=(100, 100)):
             f.save(image_path)
 
 
+
 def get_rangliste_data():
-    predictions = db.execute("""SELECT u.id, u.username, u.total_points, u.correct_result, u.correct_goal_diff, u.correct_tendency, 
-                             s.matchday, s.match_id, s.team1_score, s.team2_score, s.points
-                             FROM users AS u
-                             LEFT JOIN (
-                                SELECT p.user_id, p.matchday, p.match_id, p.team1_score, p.team2_score, p.points
-                                FROM predictions AS p
-                                ORDER BY p.matchday ASC
-                             ) AS s
-                             ON u.id = s.user_id
-                             ORDER BY u.total_points DESC, u.correct_result DESC, u.correct_goal_diff DESC, u. correct_tendency
-                    """) # query with help from chatGPT
-    
-    
+    # Query users and their predictions with a LEFT JOIN and ordering
+    users_predictions = (
+        session_db.query(User, Prediction)
+        .outerjoin(Prediction, User.id == Prediction.user_id)
+        .order_by(desc(User.total_points), desc(User.correct_result), desc(User.correct_goal_diff), desc(User.correct_tendency), asc(Prediction.matchday))
+        .all()
+    )
+
+    # Process the query results
     user_predictions = {}
-    for prediction in predictions:
-        id, username, total_points, correct_result, correct_goal_diff, correct_tendency, matchday, match_id, team1_score, team2_score, points = prediction.values()
-        if id not in user_predictions:
-            user_predictions[id] = {'username':username, 'id':id, 'total_points':total_points, 'correct_result':correct_result, 
-                                    'correct_goal_diff':correct_goal_diff, 'correct_tendency':correct_tendency, 'predictions':[]}
+    for user, prediction in users_predictions:
+        if user.id not in user_predictions:
+            user_predictions[user.id] = {
+                'username': user.username,
+                'id': user.id,
+                'total_points': user.total_points,
+                'correct_result': user.correct_result,
+                'correct_goal_diff': user.correct_goal_diff,
+                'correct_tendency': user.correct_tendency,
+                'predictions': []
+            }
 
-        user_predictions[id]['predictions'].append({
-            'matchday': matchday,
-            'match_id': match_id,
-            'team1_score': team1_score,
-            'team2_score': team2_score,
-            'points': points})
-    
-    
-    user_predictions_list = []
-    for key in user_predictions.keys():
-        user_predictions_list.append(user_predictions[key])
+        if prediction:
+            user_predictions[user.id]['predictions'].append({
+                'matchday': prediction.matchday,
+                'match_id': prediction.match_id,
+                'team1_score': prediction.team1_score,
+                'team2_score': prediction.team2_score,
+                'points': prediction.points
+            })
 
+    user_predictions_list = list(user_predictions.values())
     return user_predictions_list
 
 
@@ -595,7 +591,6 @@ def convert_iso_datetime_to_human_readable(iso_string_or_datetime_obj):
         date = datetime.fromisoformat(iso_string_or_datetime_obj)
     else: 
         date = iso_string_or_datetime_obj
-    date.weekday()
 
     weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
 

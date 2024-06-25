@@ -30,9 +30,9 @@
                     <th colspan="2" class="text-left">Begegnung</th>
                     {% for match in matchdata %}
                         <td>
-                            <img src="{{ match.team1IconPath }}" alt="{{ match.team1_shortName }}-logo" class="team-logo-small">
+                            <img src="{{ match.team1.teamIconPath }}" alt="{{ match.team1.shortName }}-logo" class="team-logo-small">
                             <span>&nbsp;:&nbsp;</span>
-                            <img src="{{ match.team2IconPath }}" alt="{{ match.team2_shortName }}-logo" class="team-logo-small">
+                            <img src="{{ match.team2.teamIconPath }}" alt="{{ match.team2.shortName }}-logo" class="team-logo-small">
                         </td>
                     {% endfor %}
                     <td colspan="4"></td>
@@ -63,12 +63,12 @@
                             {% set prediction = user.predictions|selectattr("match_id", "equalto", match.id)|first %}
                             <td>
                                 {% if prediction %}
-                                    {% if match.matchIsFinished or (next_match and next_match.is_live and next_match.id == match.id) or user.id == user_id %}
-                                        {{ prediction.team1_score }}:{{ prediction.team2_score }}
-                                        {% if match.predictions_evaluated == 1 %}
-                                            <sub>{{ prediction.points }}</sub>
-                                        {% else %}
-                                            <sub>?</sub>
+                                    {% if match.matchIsFinished or match.is_underway or user.id == user_id %}
+                                        <span class="{% if prediction.points == 0 %} prediction-wrong {% endif %}">
+                                            {{ prediction.team1_score }}:{{ prediction.team2_score }}
+                                        </span> 
+                                        {% if match.predictions_evaluated == 0 and prediction.points > 0%}
+                                            <sub class="sub-correct">{{ prediction.points }}</sub>
                                         {% endif %}
                                     {% else %}
                                         -:-

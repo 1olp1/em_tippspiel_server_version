@@ -58,6 +58,16 @@ nav .navbar-brand .blue {
     color:#19303B;
 }
 
+/* For colouring the score if the prediction was wrong */
+.prediction-wrong {
+    color: rgb(128, 128, 128);
+}
+
+/* For colouring the points if the prediction was right */
+.sub-correct {
+    color: rgb(187, 0, 0);
+}
+
 
 /* Special Columns */
 .custom-column-1 {

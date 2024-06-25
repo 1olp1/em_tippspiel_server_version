@@ -1,10 +1,11 @@
 from flask import flash, redirect, render_template, request, session
 from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_matches, get_league_table, get_current_datetime_str, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, normalize_datetime
+from helpers import login_required, get_matches, get_league_table, get_matchdata_openliga, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, normalize_datetime
 from datetime import timedelta
 from models import User, Team, Prediction, Match
 from config import app, session_db
+from extended_classes import ExtendedMatch
 
 @app.after_request
 def after_request(response):
@@ -19,11 +20,7 @@ def after_request(response):
 def rangliste():
 
     # Get last update to display last update time in html
-    last_update = db.execute("""
-                             SELECT evaluation_Date FROM matches
-                             ORDER BY evaluation_Date DESC
-                             LIMIT 1
-                             """)[0]["evaluation_Date"]
+    last_update = session_db.query(func.max(Match.evaluation_Date)).scalar()
     
     if not last_update:
         last_update = None
@@ -31,34 +28,10 @@ def rangliste():
     else:
         last_update = convert_iso_datetime_to_human_readable(last_update)
 
-    # Get next kickoff, to be able to display the predictions of users when the match is underway but not yet finished
-    next_match = db.execute("""
-                              SELECT id, matchDateTime FROM matches
-                              WHERE matchIsFinished = 0
-                              ORDER BY matchDateTime ASC
-                              LIMIT 1
-                              """)
-    
-    if next_match:
-        next_match = next_match[0]
-        next_match["is_live"] = False
-
-        current_datetime = get_current_datetime_as_object()
-        match_start_time = normalize_datetime(next_match["matchDateTime"]) # Without decimals because API uses kickoff times without decimals
-        match_duration = timedelta(minutes=90+15+10)  # Assuming each match lasts 90 minutes
-        match_end_time = match_start_time + match_duration
-
-        if match_start_time <= current_datetime <= match_end_time:
-            next_match["is_live"] = True
-
-    else:
-        next_match = None
-
     return render_template("rangliste.html",
                            matchdata=get_matches(),
                            users=get_rangliste_data(),
                            user_id=session["user_id"],
-                           next_match=next_match,
                            last_update=last_update)
 
 
@@ -80,8 +53,8 @@ def tippen():
             match.teamGroupName = '-'
 
     if request.method =="POST":
-        # Iterate through every match
-        for match in valid_matches:
+        # Iterate through every match TODO: for match in valid_matches!
+        for match in matches:
             match_id = match.id
             matchday = match.matchday
 
@@ -147,12 +120,11 @@ def gruppen():
     table_data = get_league_table()
     groups = {}
 
-
     for team in table_data:
-        if team["teamGroupName"] not in groups:
-            groups[team["teamGroupName"]] = []
+        if team.teamGroupName not in groups:
+            groups[team.teamGroupName] = []
 
-        groups[team["teamGroupName"]].append(team)
+        groups[team.teamGroupName].append(team)
 
     try:
         del groups["None"] # To remove the placeholder team
@@ -161,7 +133,13 @@ def gruppen():
 
     groups = dict(sorted(groups.items()))
 
-    return render_template("gruppen.html", groups=groups, table_data=table_data)
+    last_update = table_data[0].lastUpdateTime
+    if last_update:
+        last_update = convert_iso_datetime_to_human_readable(last_update)
+    else:
+        last_update = None
+
+    return render_template("gruppen.html", groups=groups, table_data=table_data, last_update=last_update)
 
 
 @app.route("/regeln")
@@ -215,6 +193,7 @@ def login():
 
                 # Update user scores
                 print("Updating user scores...")
+                update_user_scores()
                 print("User scores update finished.")
             
             else:
@@ -223,6 +202,7 @@ def login():
         except Exception as e:
             print(f"Update failed: {e}")
 
+        update_user_scores()
 
 
         # Redirect user to home page

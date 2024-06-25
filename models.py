@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -35,6 +36,22 @@ class Match(Base):
     # Define explicit relationship names
     team1 = relationship("Team", foreign_keys=[team1_id], backref="matches_as_team1")
     team2 = relationship("Team", foreign_keys=[team2_id], backref="matches_as_team2")
+
+    @property
+    def formatted_matchDateTime(self):
+        date = self.matchDateTime
+        weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
+        match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%Y %H:%M')}"
+        return match_time_readable
+    
+    @property
+    def is_underway(self):
+        current_datetime = datetime.now()
+        match_start_time = self.matchDateTime
+        if match_start_time <= current_datetime and not self.matchIsFinished:
+            return True
+        else:
+            return False
 
 class Team(Base):
     __tablename__ = 'teams'

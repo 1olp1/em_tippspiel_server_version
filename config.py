@@ -2,7 +2,6 @@ from flask import Flask
 from flask_session import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base
 import os
 
 app = Flask(__name__)
