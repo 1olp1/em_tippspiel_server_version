@@ -1,8 +1,9 @@
 from flask import flash, redirect, render_template, request, session
+from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_matches, get_league_table, get_current_datetime_str, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, get_teams, convert_iso_to_datetime_without_decimals
+from helpers import login_required, get_matches, get_league_table, get_current_datetime_str, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, normalize_datetime
 from datetime import timedelta
-from models import User
+from models import User, Team, Prediction, Match
 from config import app, session_db
 
 @app.after_request
@@ -43,7 +44,7 @@ def rangliste():
         next_match["is_live"] = False
 
         current_datetime = get_current_datetime_as_object()
-        match_start_time = convert_iso_to_datetime_without_decimals(next_match["matchDateTime"]) # Without decimals because API uses kickoff times without decimals
+        match_start_time = normalize_datetime(next_match["matchDateTime"]) # Without decimals because API uses kickoff times without decimals
         match_duration = timedelta(minutes=90+15+10)  # Assuming each match lasts 90 minutes
         match_end_time = match_start_time + match_duration
 
@@ -69,24 +70,24 @@ def tippen():
 
     for match in matches:
         # Make list of matches that are valid for prediction, e.g. not finished and not started
-        # Also add the group for each match for displaying in html
-        if match["matchIsFinished"] == 0 and get_current_datetime_str() < match["matchDateTime"]:
+        if match.matchIsFinished == 0 and get_current_datetime_as_object() < match.matchDateTime:
            valid_matches.append(match)
         
-        if match["matchday"] < 4:
-            match["teamGroupName"] = db.execute("SELECT teamGroupName FROM teams WHERE id = ?", match["team1_id"])[0]["teamGroupName"].replace("Gruppe ","")
+        if match.matchday < 4:
+            team_group_name = session_db.query(Team.teamGroupName).filter(Team.id == match.team1_id).first()
+            match.teamGroupName = team_group_name[0].replace("Gruppe ", "") if team_group_name else '-'
         else:
-            match["teamGroupName"] = '-'
+            match.teamGroupName = '-'
 
     if request.method =="POST":
         # Iterate through every match
         for match in valid_matches:
-            match_id = match["id"]
-            matchday = match["matchday"]
+            match_id = match.id
+            matchday = match.matchday
 
             # Get user predictions for the match
-            team1_score = request.form.get('team1Score_' + str(match_id))
-            team2_score = request.form.get('team2Score_' + str(match_id))
+            team1_score = request.form.get(f'team1Score_{match_id}')
+            team2_score = request.form.get(f'team2Score_{match_id}')
 
             # Check for valid input. If it is valid, convert to int. Else, continue to next match iteration
             if team1_score and team2_score:
@@ -95,41 +96,46 @@ def tippen():
                         team2_score = int(team2_score)
                 else:
                     continue
-            
             else:
                 continue
-            
-            # Get the last prediction for the match
-            prediction = db.execute("SELECT * FROM predictions WHERE user_id = ? AND match_id = ?", session["user_id"], match_id)
+
             winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
+
+            # Get the last prediction for the match
+            prediction = session_db.query(Prediction).filter_by(user_id=session["user_id"], match_id=match_id).first()
 
             # If it exists and differs from the original prediction, update the prediction
             if prediction:
-                if team1_score != prediction[0]["team1_score"] or team2_score != prediction[0]["team2_score"]:
-                    db.execute("UPDATE predictions SET team1_score = ?, team2_score = ?, goal_diff = ?, winner = ?, prediction_date = ? WHERE user_id = ? AND match_id = ?",
-                            team1_score, team2_score, team1_score-team2_score, winner, get_current_datetime_str(), session["user_id"], match_id)
-
+                if team1_score != prediction.team1_score or team2_score != prediction.team2_score:
+                    prediction.team1_score = team1_score
+                    prediction.team2_score = team2_score
+                    prediction.goal_diff = team1_score - team2_score
+                    prediction.winner = winner
+                    prediction.prediction_date = get_current_datetime_as_object()
             # If there is no prediction in the db, insert it
             else:
-                db.execute("""
-                        INSERT INTO predictions (user_id, matchday, match_id, team1_score, team2_score, goal_diff, winner, prediction_date)
-                        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        session["user_id"], matchday, match_id, team1_score, team2_score, team1_score-team2_score, winner, get_current_datetime_str())
+                new_prediction = Prediction(
+                    user_id=session["user_id"],
+                    matchday=matchday,
+                    match_id=match_id,
+                    team1_score=team1_score,
+                    team2_score=team2_score,
+                    goal_diff=team1_score - team2_score,
+                    winner=winner,
+                    prediction_date=get_current_datetime_as_object()
+                )
+                session_db.add(new_prediction)
+        
+        session_db.commit()
     
     # Get all predictions from the user
-    predictions = db.execute("SELECT * FROM predictions WHERE user_id = ?", session["user_id"])
+    predictions = session_db.query(Prediction).filter_by(user_id=session["user_id"]).all()
 
     # Get time of last update
-    last_update = db.execute("""
-                                SELECT lastUpdateDateTime FROM matches
-                                ORDER BY lastUpdateDateTime DESC
-                                LIMIT 1
-                                """)[0]["lastUpdateDateTime"]
+    last_update = session_db.query(func.max(Match.lastUpdateDateTime)).scalar()
     
     # If an entry for last update exists, format for displaying
     if last_update:
-        last_update = add_up_decimals_to_6(last_update)
         last_update = convert_iso_datetime_to_human_readable(last_update)
 
     return render_template("tippen.html", matches=matches, predictions=predictions, valid_matches=valid_matches, last_update=last_update)
@@ -194,42 +200,29 @@ def login():
 
         # Remember which user has logged in
         session["user_id"] = user.id
-
-        print("Is update needed for the league table?")
-        try:
-
-            if is_update_needed_league_table():
-                print("Yes. Updating...")
-                #update_league_table()
-                print("Update finished.")
-
-            else:
-                print("No update needed.")
-        
-        except Exception as e:
-            print(f"Updating league table failed: {e}")
-
-
         
         # Update league table and match data if needed
-        """     try:
+        try:
             if is_update_needed_league_table():
                 print("Yes. Updating league table...")
                 update_league_table()
                 print("League table update finished.")
 
+            print("Is update needed for matches?")
             if is_update_needed_matches():
                 print("Yes. Updating matches database...")
                 update_matches_db()
 
                 # Update user scores
                 print("Updating user scores...")
-                update_user_scores()
                 print("User scores update finished.")
+            
+            else:
+                print("No update needed")
 
         except Exception as e:
             print(f"Update failed: {e}")
-            """
+
 
 
         # Redirect user to home page

@@ -8,8 +8,8 @@ class User(Base):
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String, unique=True, nullable=False)
-    hash = Column(String, nullable=False)
+    username = Column(String(255), unique=True, nullable=False)
+    hash = Column(String(255), nullable=False)
     total_points = Column(Integer, default=0)
     correct_result = Column(Integer, default=0)
     correct_goal_diff = Column(Integer, default=0)
@@ -27,21 +27,23 @@ class Match(Base):
     team2_score = Column(Integer)
     matchDateTime = Column(DateTime)
     matchIsFinished = Column(Integer)
-    location = Column(String)
+    location = Column(String(255))
     lastUpdateDateTime = Column(DateTime)
     predictions_evaluated = Column(Integer, default=0)
     evaluation_Date = Column(DateTime)
-    team1 = relationship("Team", foreign_keys=[team1_id])
-    team2 = relationship("Team", foreign_keys=[team2_id])
+
+    # Define explicit relationship names
+    team1 = relationship("Team", foreign_keys=[team1_id], backref="matches_as_team1")
+    team2 = relationship("Team", foreign_keys=[team2_id], backref="matches_as_team2")
 
 class Team(Base):
     __tablename__ = 'teams'
 
     id = Column(Integer, primary_key=True)
-    teamName = Column(String)
-    shortName = Column(String)
-    teamIconUrl = Column(String)
-    teamIconPath = Column(String)
+    teamName = Column(String(255))
+    shortName = Column(String(255))
+    teamIconUrl = Column(String(255))
+    teamIconPath = Column(String(255))
     teamGroupName = Column(String, default='None')
     points = Column(Integer, default=0)
     opponentGoals = Column(Integer, default=0)
@@ -51,7 +53,7 @@ class Team(Base):
     lost = Column(Integer, default=0)
     draw = Column(Integer, default=0)
     goalDiff = Column(Integer, default=0)
-    rank = Column(Integer)
+    teamRank = Column(Integer)
     lastUpdateTime = Column(DateTime)
 
 class Prediction(Base):

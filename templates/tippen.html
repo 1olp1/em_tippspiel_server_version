@@ -32,15 +32,15 @@
                     {% endif %}
                     <td>{{ match.teamGroupName }}</td>
                     <td style="text-align: left;">{{  match.matchDateTime  }}, {{ match.location }}</td>
-                    <td class="right-aligned" >{{  match.team1_name  }}</td>
-                    <td><img src="{{  match.team1IconPath  }}" alt="{{  match.team1_name }}-logo" class="team-logo"></td>
+                    <td class="right-aligned" >{{  match.team1.teamName  }}</td>
+                    <td><img src="{{  match.team1.teamIconPath  }}" alt="{{  match.team1.teamName }}-logo" class="team-logo"></td>
                     <td>{% if match.matchIsFinished == 1 %}
                             {{ match.team1_score }}&nbsp;:&nbsp;{{ match.team2_score }}
                         {% else %}
                             - : -
                         {% endif %}</td>
-                    <td><img src="{{  match.team2IconPath  }}" alt="{{  match.team2_name  }}-logo" class="team-logo"></td>
-                    <td class="left-aligned">{{  match.team2_name  }}</td>
+                    <td><img src="{{  match.team2.teamIconPath  }}" alt="{{  match.team2.teamName  }}-logo" class="team-logo"></td>
+                    <td class="left-aligned">{{  match.team2.teamName  }}</td>
                     <td>
                         <input type="text" autocomplete="off" class="form-control score-input" placeholder="-"  id="team1Score_{{ match.id }}" name="team1Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team1_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled{% endif %}>
                     </td>

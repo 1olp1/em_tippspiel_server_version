@@ -1,5 +1,6 @@
 from flask import redirect, session
-from sqlalchemy import func
+from sqlalchemy import func, text
+from sqlalchemy.orm import aliased
 from functools import wraps
 import requests
 import uuid
@@ -8,7 +9,6 @@ from PIL import Image
 from datetime import datetime
 from models import User, Match, Team, Prediction
 from config import session_db
-
 
 # Prepare API requests
 league = "em"      # bl1 for 1. Bundesliga
@@ -29,31 +29,12 @@ automatic_updates = False
 
 
 def get_local_matches():
-    matches_db = db.execute("""
-                            SELECT 
-                            matches.*,
-                            team1.teamName AS team1_name,
-                            team2.teamName AS team2_name,
-                            team1.teamIconPath AS team1IconPath,
-                            team2.teamIconPath AS team2IconPath,
-                            team1.shortName AS team1_shortname,
-                            team2.shortName AS team2_shortname
-                            FROM 
-                                matches
-                            JOIN 
-                                teams AS team1 ON matches.team1_id = team1.id
-                            JOIN 
-                                teams AS team2 ON matches.team2_id = team2.id;
-                            """)
-    
-    for match in matches_db:
-        match["matchDateTime"] = convert_iso_datetime_to_human_readable(match["matchDateTime"])
+    matches = session_db.query(Match).all()
+    return matches
 
-    return matches_db
-    
 
 def get_teams():
-    teams_db = db.execute("SELECT * FROM teams")
+    teams_db = session_db.query(Team).all()
     return teams_db
 
 
@@ -98,7 +79,7 @@ def get_league_table():
         
 
     table = db.execute("""SELECT * FROM teams
-                       ORDER BY rank ASC
+                       ORDER BY teamRank ASC
                        """)
     
     table[0]["lastUpdateTime"] = convert_iso_datetime_to_human_readable(table[0]["lastUpdateTime"])
@@ -119,163 +100,111 @@ def get_matches():
 
 def insert_teams_to_db():
     print("Inserting teams to db")
-
     try:
         teams = get_openliga_json(url_teams)
-    
-        # Insert teams to db
-        for team in teams:
-            db.execute("INSERT INTO teams (id, teamName, shortName, teamIconUrl, teamIconPath, teamGroupName) VALUES(?, ?, ?, ?, ?, ?)",
-                    team["teamId"],
-                    team["teamName"],
-                    team["shortName"],
-                    team["teamIconUrl"],
-                    make_image_filepath(team),
-                    team["teamGroupName"]
-            )
-        
-        # Insert dummy team for open matchups where teams are yet undetermined
-        db.execute("INSERT INTO teams (id, teamName, shortName, teamIconPath) VALUES(?, ?, ?, ?)",
-                   5251,
-                   '-',
-                   '-',
-                   os.path.join(img_folder,"dummy-teamlogo.png")
-                     )
+        if teams:
+            for team in teams:
+                team = Team(
+                    id = team["teamId"],
+                    teamName = team["teamName"],
+                    shortName = team["shortName"],
+                    teamIconUrl = team["teamIconUrl"],
+                    teamIconPath = make_image_filepath(team),
+                    teamGroupName = team["teamGroupName"]
+                )
+                session_db.add(team)
 
-        # Download and resize team icon images
-        print("Downloading and resizing team icon images")
-        download_and_resize_logos(teams)
+            # Insert dummy team for open matchups after the group stage where teams are yet undetermined
+            dummy_team = Team(
+                id = 5251,
+                teamName = '-',
+                shortName = '-',
+                teamIconPath = os.path.join(img_folder,"dummy-teamlogo.png")
+            )
+
+            session_db.add(dummy_team)
+
+            # Download and resize team icon images
+            print("Downloading and resizing team icon images")
+            download_and_resize_logos(teams)
             
-        db.execute("UPDATE teams SET lastUpdateTime = ?", get_current_datetime_str())
-    
+            session_db.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
+        session_db.commit()
     except Exception as e:
             print(f"Updating inserting teams failed: {e}")
                
 
 def update_league_table():
     table = get_openliga_json(url_table)
-    for rank, team in enumerate(table, start=1):
-        db.execute("""
-                   UPDATE teams SET
-                   points = ?, opponentGoals = ?, goals = ?, matches = ?, won = ?, lost = ?, draw = ?, goalDiff = ?,
-                   rank = ? WHERE id = ?
-                   """,
-                   team["points"],
-                   team["opponentGoals"],
-                   team["goals"],
-                   team["matches"],
-                   team["won"],
-                   team["lost"],
-                   team["draw"],
-                   team["goalDiff"],
-                   rank,
-                   team["teamInfoId"]
-                   )
-    
-    db.execute("UPDATE teams SET lastUpdateTime = ?", get_current_datetime_str())
+    if table:
+        for teamRank, team in enumerate(table, start=1):
+
+            session_db.query(Team).filter_by(id=team["teamInfoId"]).update({
+                Team.points: team["points"],
+                Team.opponentGoals: team["opponentGoals"],
+                Team.goals: team["goals"],
+                Team.matches: team["matches"],
+                Team.won: team["won"],
+                Team.lost: team["lost"],
+                Team.draw: team["draw"],
+                Team.goalDiff: team["goalDiff"],
+                Team.teamRank: teamRank
+            })
+        # Update lastUpdateTime for all teams
+        session_db.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
+
+        # Commit the session to persist data
+        session_db.commit()
 
 
 def update_user_scores():
     # Get data for evaluating the predictions
     matches = get_local_matches()
-    predictions = db.execute("SELECT * FROM predictions")
-
-    # Evaluate predictions for each match
+    
     for match in matches:
-        if match["matchIsFinished"] == 1 and match["predictions_evaluated"] == 0:
-            # Prerequisites
-            match_id = match["id"]
-            team1_score = match["team1_score"]
-            team2_score = match["team2_score"]
+        if match.matchIsFinished == 1 and match.predictions_evaluated == 0:
+            # Calculate match outcome parameters
+            team1_score = match.team1_score
+            team2_score = match.team2_score
             goal_diff = team1_score - team2_score
             winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
 
             # Get predictions for this match
-            predictions = db.execute("SELECT * FROM predictions WHERE match_id = ?", match_id)
+            predictions = session_db.query(Prediction).filter(Prediction.match_id == match.id).all()
 
             for prediction in predictions:
-                awarded_points = 0                    
-
-                # Award 4 points for correct result
-                if team1_score == prediction["team1_score"] and team2_score == prediction["team2_score"]:
-                    awarded_points = 4
-                
-                # 3 points for correct goal_diff
-                elif goal_diff == prediction["goal_diff"]:
-                    awarded_points = 3
-
-                # 2 points for correct tendency
-                elif winner == prediction["winner"]:
-                    awarded_points = 2
-                
-                # 0 point for wrong prediction
+                if team1_score == prediction.team1_score and team2_score == prediction.team2_score:
+                    prediction.points = 4
+                elif goal_diff == prediction.goal_diff:
+                    prediction.points = 3
+                elif winner == prediction.winner:
+                    prediction.points = 2
                 else:
-                    awarded_points = 0
+                    prediction.points = 0
 
-                # Set points for the current prediction
-                db.execute("UPDATE predictions SET points = ? WHERE id = ?", awarded_points, prediction["id"])
-
-            # Switch predictions_evaluated to 1 for the match, so that next time, only the not evaluated matches get evaluated
-            db.execute("UPDATE matches SET predictions_evaluated = 1, evaluation_Date = ? WHERE id = ?",get_current_datetime_str(), match["id"])
+            # Update match evaluation status
+            match.predictions_evaluated = 1
+            match.evaluation_Date = get_current_datetime_as_object()
 
     # Update total points in the users table (Query with help from chatGPT)
-    db.execute("""
-               UPDATE users
-               SET total_points = (
-                   SELECT SUM(points)
-                   FROM predictions
-                   WHERE user_id = users.id
-               )
-               WHERE id IN (
-               SELECT DISTINCT user_id
-               FROM predictions
-               )
-               """)
-    
-    # Update correct result count in users table (with help from chatGPT)
-    db.execute("""
-               UPDATE users
-               SET correct_result = (
-                    SELECT(COUNT(*))
-                    FROM predictions
-                    WHERE points = 4
-                    AND user_id = users.id
-               )
-               WHERE id IN (
-               SELECT DISTINCT user_id
-               FROM predictions
-               )
-               """)
-    
-    # Update correct goal diff count in users table (with help from chatGPT)
-    db.execute("""
-               UPDATE users
-               SET correct_goal_diff = (
-                    SELECT(COUNT(*))
-                    FROM predictions
-                    WHERE points = 3
-                    AND user_id = users.id
-               )
-               WHERE id IN (
-               SELECT DISTINCT user_id
-               FROM predictions
-               )
-               """)
-    
-    # Update correct tendency count in users table (query with help from chatGPT)
-    db.execute("""
-               UPDATE users
-               SET correct_tendency = (
-                    SELECT(COUNT(*))
-                    FROM predictions
-                    WHERE points = 2
-                    AND user_id = users.id
-               )
-               WHERE id IN (
-               SELECT DISTINCT user_id
-               FROM predictions
-               )
-               """)
+    users = session_db.query(User).all()
+
+    # Update total_points for each user
+    for user in users:
+        # Update user total points
+        user.total_points = session_db.query(func.sum(Prediction.points)).filter(Prediction.user_id == user.id).scalar() or 0
+
+        # Correct predictions with 4 points
+        user.correct_result = session_db.query(func.count()).filter(Prediction.points == 4, Prediction.user_id == user.id).scalar() or 0
+
+        # Correct goal diff predictions 3 points
+        user.correct_goal_diff = session_db.query(func.count()).filter(Prediction.points == 3, Prediction.user_id == user.id).scalar() or 0
+
+        # Correct tendency predictions 2 points
+        user.correct_tendency = session_db.query(func.count()).filter(Prediction.points == 2, Prediction.user_id == user.id).scalar() or 0
+
+    # Commit all changes to the database
+    session_db.commit()
 
 
 def insert_matches_to_db():
@@ -290,47 +219,41 @@ def insert_matches_to_db():
             team1_score = match["matchResults"][1]["pointsTeam1"] if matchFinished else None
             team2_score = match["matchResults"][1]["pointsTeam2"] if matchFinished else None
 
-            print(f"Saving match {match['matchID']} to db")
+            match = Match(
+                id = match["matchID"],
+                matchday = match["group"]["groupOrderID"],
+                team1_id = match["team1"]["teamId"],
+                team2_id = match["team2"]["teamId"],
+                team1_score = team1_score,
+                team2_score = team2_score,
+                matchDateTime = match["matchDateTime"],
+                matchIsFinished = matchFinished,
+                location = match["location"]["locationCity"],
+                lastUpdateDateTime = match["lastUpdateDateTime"]
+            )
+            
+            session_db.add(match)
 
-            # Save to database
-            db.execute("""
-                       INSERT INTO matches(id, matchday, team1_id, team2_id, team1_score, team2_score, matchDateTime,
-                       matchIsFinished, location, lastUpdateDateTime)
-                       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                       """,
-                       match["matchID"],
-                       match["group"]["groupOrderID"],
-                       match["team1"]["teamId"],
-                       match["team2"]["teamId"],
-                       team1_score,
-                       team2_score,
-                       match["matchDateTime"],
-                       matchFinished,
-                       match["location"]["locationCity"],
-                       match["lastUpdateDateTime"] # So that it is always of same format
-                       )
+    session_db.commit()
+
 
 
 def update_matches_db():
     # Get unfinished matches of the local database
-    unfinished_matches_db = db.execute("""
-                                     SELECT * FROM matches
-                                     WHERE matchIsFinished = 0;
-                                     """)
-    
+    unfinished_matches_db = session_db.query(Match).filter(Match.matchIsFinished == 0).all()
+
     for match in unfinished_matches_db:
         # Get matchdata openliga
-        matchdata_openliga = get_matchdata_openliga(match["id"])
+        matchdata_openliga = get_matchdata_openliga(match.id)
 
         # Get lastUpdateTime for match in db
         last_update_time_openliga = matchdata_openliga["lastUpdateDateTime"]
 
-        last_update_time_db = match["lastUpdateDateTime"]
+        last_update_time_db = match.lastUpdateDateTime
 
         if last_update_time_openliga and last_update_time_db:
             # Convert dates to comparable format
-            last_update_time_openliga = convert_iso_to_datetime_with_decimals(last_update_time_openliga)
-            last_update_time_db = convert_iso_to_datetime_with_decimals(last_update_time_db)
+            last_update_time_openliga = normalize_datetime(last_update_time_openliga)
 
             if last_update_time_openliga > last_update_time_db:
                 update_match_in_db(matchdata_openliga)
@@ -341,25 +264,25 @@ def update_matches_db():
 
 def update_match_in_db(match):
     print("Updating match: ", match["matchID"])
-    # Local variable if match is finished
+    # Local variable if match is finished to distinguish team_scores
     matchFinished = match["matchIsFinished"]
-    
-    db.execute("""
-               UPDATE matches SET
-               team1_score = ?,
-               team2_score = ?,
-               matchDateTime = ?,
-               matchIsFinished = ?,
-               lastUpdateDateTime = ?
-               WHERE id = ?
-                """,
-                [match["matchResults"][1]["pointsTeam1"] if matchFinished else None],
-                [match["matchResults"][1]["pointsTeam2"] if matchFinished else None],
-                match["matchDateTime"],
-                match["matchIsFinished"],
-                match["lastUpdateDateTime"],
-                match["matchID"]
-        )
+
+    # Prepare update dictionary based on match status
+    update_data = {
+        Match.matchDateTime: match["matchDateTime"],
+        Match.matchIsFinished: matchFinished,
+        Match.lastUpdateDateTime: match["lastUpdateDateTime"]
+    }
+
+    # Conditionally update team scores based on match finished status
+    if matchFinished:
+        update_data[Match.team1_score] = match["matchResults"][1]["pointsTeam1"]
+        update_data[Match.team2_score] = match["matchResults"][1]["pointsTeam2"]
+
+    session_db.query(Match).filter_by(id=match["matchID"]).update(update_data)
+
+    # Commit the session to persist data
+    session_db.commit()
 
 
 def download_and_resize_logos(teams):
@@ -472,8 +395,9 @@ def is_update_needed_league_table():
     empty_check_db = session_db.query(Team).all()
 
     if not empty_check_db:
-        #insert_teams_to_db()
-        pass
+        print("teams table is empty, inserting teams first...")
+        insert_teams_to_db()
+        print("inserting done.")
 
     # Get current matchday by online query (returns the upcoming matchday after the middle of the week)
     current_matchday = get_current_matchday_openliga()
@@ -481,10 +405,10 @@ def is_update_needed_league_table():
     # Get current matchday of the local database
     current_match_db = session_db.query(Team.matches, Team.lastUpdateTime).order_by(Team.matches.desc()).first()
     
-    if current_matchday > current_match_db.matches:  # +1 bcs of the current matchday calc. by openliga
+    if current_matchday > current_match_db.matches:
         return True
 
-    # Return last update times if the matchday is equal or + 1 ahead
+    # Last update times if the matchday is equal
     else:
          # Get last update time of the online matchdata
         lastUpdateTime_openliga = get_last_online_change(current_matchday)
@@ -493,8 +417,8 @@ def is_update_needed_league_table():
         
         if lastUpdateTime_db:
             # Convert dates to comparable format
-            lastUpdateTime_openliga = convert_iso_to_datetime_with_decimals(lastUpdateTime_openliga)
-            lastUpdateTime_db = datetime.fromisoformat(lastUpdateTime_db)
+            lastUpdateTime_openliga = normalize_datetime(lastUpdateTime_openliga)
+            lastUpdateTime_db = normalize_datetime(lastUpdateTime_db)
 
             # If online data is more recent, update the database
             if lastUpdateTime_openliga > lastUpdateTime_db:
@@ -509,58 +433,49 @@ def is_update_needed_league_table():
 
 
 def is_update_needed_matches():
-    # If table is empty, fill matches table
-    empty_check_db  = db.execute("SELECT * FROM matches")
+    # If matches table is empty, fill matches table
+    empty_check_db = session_db.query(Match).all()
 
     if not empty_check_db:
+        print("Matches table is empty, inserting matches first...")
         insert_matches_to_db() 
+        print("Inserting done.")
 
-    # Get current matchday from API (gets the closest in time matchday)
+    # Get current matchday from API and DB (gets the closest in time matchday (also past matches are considered))
     current_matchday_API = get_current_matchday_openliga()
+    current_matchday_data_db = find_closest_in_time_match_db()
 
-    # Get current match from db based on which match is closest in time
-    current_datetime = get_current_datetime_str()
-    current_matchday_db = db.execute("""
-                                     SELECT
-                                        matchday, id
-                                     FROM 
-                                        matches
-                                     ORDER BY
-                                        ABS(strftime('%s', matchDateTime) - strftime('%s', ?))
-                                     """, current_datetime)[0]  # query with chatgpt help
+    # Get matchday and id from db based on the former query
+    current_matchday_db = current_matchday_data_db.matchday
+    current_matchday_id_db = current_matchday_data_db.id
 
-    print("Current matchday local: ", current_matchday_db["matchday"])
+    # Print to enable debugging for comparison of matchdays
+    print("Current matchday local: ", current_matchday_db)
     print("Current matchday API: ", current_matchday_API)
 
     ### Compare matchdays and if they're the same check for update times
-
-    # If the current local matchday is smaller than the current online matchday, update is needed
-    if current_matchday_db["matchday"] < current_matchday_API:
+    if current_matchday_db < current_matchday_API:
         return True
     
-    # If the next matchdays are the same, check for last update times for these matches
-    elif current_matchday_db["matchday"] == current_matchday_API:
+    # If the next matchdays are the same, check for last update times
+    elif current_matchday_db == current_matchday_API:
+
         # Get last online update for the match
-        current_match_matchdata = get_matchdata_openliga(current_matchday_db["id"])
-        lastUpdateTime_openliga = current_match_matchdata["lastUpdateDateTime"]
+        lastUpdateTime_openliga = get_matchdata_openliga(current_matchday_id_db)["lastUpdateDateTime"]
 
         # Get last update time of the locally saved db
-        lastUpdateTime_db = db.execute("""
-                                        SELECT lastUpdateDateTime FROM matches
-                                        WHERE id = ?
-                                        """,
-                                        current_matchday_db["id"])
+        last_update_time_db = session_db.query(Match.lastUpdateDateTime).filter_by(id=current_matchday_id_db).scalar()
         
         # If a last update time exists for the next match
-        if lastUpdateTime_db[0]["lastUpdateDateTime"] and lastUpdateTime_openliga:
+        if last_update_time_db and lastUpdateTime_openliga:
             # Convert dates to comparable format
-            lastUpdateTime_openliga = convert_iso_to_datetime_with_decimals(lastUpdateTime_openliga)
-            lastUpdateTime_db = datetime.fromisoformat(lastUpdateTime_db[0]["lastUpdateDateTime"])
+            lastUpdateTime_openliga = normalize_datetime(lastUpdateTime_openliga)
+            last_update_time_db = normalize_datetime(last_update_time_db)
 
             # If online data is more recent, update the database
             print("Last update time openliga:", lastUpdateTime_openliga)
-            print("Last update time db:", lastUpdateTime_db)
-            if lastUpdateTime_openliga > lastUpdateTime_db:
+            print("Last update time db:", last_update_time_db)
+            if lastUpdateTime_openliga > last_update_time_db:
                 return True
             
             else:
@@ -580,8 +495,6 @@ def get_matchdata_openliga(id):
     matchdata = get_openliga_json(url)
 
     return matchdata
-
-
 
 
 def get_last_online_change(matchday_id):
@@ -677,21 +590,61 @@ def get_current_datetime_as_object():
     return datetime.now()
 
 
-def convert_iso_datetime_to_human_readable(datetime_iso_string):
-    date = datetime.fromisoformat(datetime_iso_string)
-
+def convert_iso_datetime_to_human_readable(iso_string_or_datetime_obj):
+    if isinstance(iso_string_or_datetime_obj, str):
+        date = datetime.fromisoformat(iso_string_or_datetime_obj)
+    else: 
+        date = iso_string_or_datetime_obj
     date.weekday()
 
     weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
 
     # Format the datetime object into a more readable format
     match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%Y %H:%M')}"
-
     return match_time_readable
 
 
-def convert_iso_to_datetime_with_decimals(iso_str):
-    return datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%S.%f")
+# With help from chatgpt
+def normalize_datetime(input_dt):
+    # Define possible datetime string formats
+    datetime_formats = [
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+    ]
 
-def convert_iso_to_datetime_without_decimals(iso_str):
-    return datetime.strptime(iso_str, "%Y-%m-%dT%H:%M:%S")
+    if isinstance(input_dt, str):
+        dt = None
+        for fmt in datetime_formats:
+            try:
+                dt = datetime.strptime(input_dt, fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
+            raise ValueError(f"Time data '{input_dt}' does not match any expected format")
+    elif isinstance(input_dt, datetime):
+        dt = input_dt
+    else:
+        raise ValueError("Input must be a datetime string or a datetime object")
+
+    # Remove microseconds
+    dt_without_microseconds = dt.replace(microsecond=0)
+    return dt_without_microseconds
+
+
+def find_closest_in_time_match_db():
+    # Get current match from db based on which match is closest in time
+    current_datetime = datetime.now()
+    
+    current_matchday_data_db = session_db.query(
+        Match.matchday,
+        Match.id
+    ).order_by(
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
+    ).first()           # Query by chatgpt
+
+    return current_matchday_data_db
