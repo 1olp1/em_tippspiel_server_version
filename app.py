@@ -2,10 +2,8 @@ from flask import flash, redirect, render_template, request, session
 from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 from helpers import login_required, get_matches, get_league_table, get_matchdata_openliga, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, add_up_decimals_to_6, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, normalize_datetime
-from datetime import timedelta
 from models import User, Team, Prediction, Match
 from config import app, session_db
-from extended_classes import ExtendedMatch
 
 @app.after_request
 def after_request(response):
