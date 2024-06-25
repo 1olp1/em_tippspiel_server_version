@@ -156,3 +156,13 @@ nav .navbar-brand .blue {
 .team-name {
     font-weight: bold; /* Make team names bold */
 }
+
+
+/* Index route formatting */
+.card-text, .stats {
+    display: flex;
+    justify-content: space-between;
+}
+.stats {
+    margin-bottom: 0.1rem;
+}

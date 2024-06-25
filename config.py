@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_session import Session
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 import os
 
 app = Flask(__name__)
@@ -14,10 +14,10 @@ Session(app)
 
 # Configure SQLAlchemy for MySQL database
 SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{username}:{password}@{hostname}/{databasename}'.format(
-    username = os.getenv('DB_USERNAME'),
-    password = os.getenv('DB_PASSWORD'),
-    hostname = os.getenv('DB_HOSTNAME'),
-    databasename = os.getenv('DB_DATABASE')
+    username=os.getenv('DB_USERNAME'),
+    password=os.getenv('DB_PASSWORD'),
+    hostname=os.getenv('DB_HOSTNAME'),
+    databasename=os.getenv('DB_DATABASE')
 )
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_POOL_RECYCLE"] = 299
@@ -25,5 +25,8 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Create SQLAlchemy engine and session
 engine = create_engine(SQLALCHEMY_DATABASE_URI)
-Session = sessionmaker(bind=engine)
-session_db = Session()
+SessionFactory = sessionmaker(bind=engine)
+session_db = scoped_session(SessionFactory)
+
+def get_db_session():
+    return session_db()

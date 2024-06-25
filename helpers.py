@@ -1,6 +1,5 @@
 from flask import redirect, session
 from sqlalchemy import func, text, desc, asc
-from sqlalchemy.orm import aliased
 from functools import wraps
 import requests
 import uuid
@@ -8,7 +7,6 @@ import os
 from PIL import Image
 from datetime import datetime
 from models import User, Match, Team, Prediction
-from config import session_db
 
 # Prepare API requests
 league = "em"      # bl1 for 1. Bundesliga
@@ -24,18 +22,13 @@ url_teams = f"https://api.openligadb.de/getavailableteams/{league}/{season}"
 local_folder_path = os.path.join(".", "static", league, season)
 img_folder =  os.path.join(local_folder_path, "team-logos")
 
-# Control the update mechanism of the database concerning the openliga updates
-automatic_updates = False
+
+def get_matches_db(db_session):
+        return db_session.query(Match).all()
 
 
-def get_local_matches():
-    matches = session_db.query(Match).all()
-    return matches
-
-
-def get_teams():
-    teams_db = session_db.query(Team).all()
-    return teams_db
+def get_teams(db_session):
+    return db_session.query(Team).all()
 
 
 def login_required(f):
@@ -72,28 +65,11 @@ def get_openliga_json(url):
         return None
     
 
-def get_league_table():
-    if automatic_updates:
-        if is_update_needed_league_table():
-            update_league_table()
-        
-    table = session_db.query(Team).order_by(Team.teamRank.asc()).all()
-    
-    return table
+def get_league_table(db_session):        
+    return db_session.query(Team).order_by(Team.teamRank.asc()).all()
         
 
-def get_matches():
-    print("getting matches...")   
-
-    if automatic_updates:
-        if is_update_needed_matches():
-            update_matches_db()
-
-    # Return matches from the local database in the right format
-    return get_local_matches()
-
-
-def insert_teams_to_db():
+def insert_teams_to_db(db_session):
     print("Inserting teams to db")
     try:
         teams = get_openliga_json(url_teams)
@@ -107,7 +83,7 @@ def insert_teams_to_db():
                     teamIconPath = make_image_filepath(team),
                     teamGroupName = team["teamGroupName"]
                 )
-                session_db.add(team)
+                db_session.add(team)
 
             # Insert dummy team for open matchups after the group stage where teams are yet undetermined
             dummy_team = Team(
@@ -117,24 +93,24 @@ def insert_teams_to_db():
                 teamIconPath = os.path.join(img_folder,"dummy-teamlogo.png")
             )
 
-            session_db.add(dummy_team)
+            db_session.add(dummy_team)
 
             # Download and resize team icon images
             print("Downloading and resizing team icon images")
             download_and_resize_logos(teams)
             
-            session_db.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
-        session_db.commit()
+            db_session.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
+        db_session.commit()
     except Exception as e:
             print(f"Updating inserting teams failed: {e}")
                
 
-def update_league_table():
+def update_league_table(db_session):
     table = get_openliga_json(url_table)
     if table:
         for teamRank, team in enumerate(table, start=1):
 
-            session_db.query(Team).filter_by(id=team["teamInfoId"]).update({
+            db_session.query(Team).filter_by(id=team["teamInfoId"]).update({
                 Team.points: team["points"],
                 Team.opponentGoals: team["opponentGoals"],
                 Team.goals: team["goals"],
@@ -146,15 +122,15 @@ def update_league_table():
                 Team.teamRank: teamRank
             })
         # Update lastUpdateTime for all teams
-        session_db.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
+        db_session.query(Team).update({Team.lastUpdateTime: get_current_datetime_str()})
 
         # Commit the session to persist data
-        session_db.commit()
+        db_session.commit()
 
 
-def update_user_scores():
+def update_user_scores(db_session):
     # Get data for evaluating the predictions
-    matches = get_local_matches()
+    matches = get_matches_db(db_session)
     
     for match in matches:
         if match.matchIsFinished == 1 and match.predictions_evaluated == 0:
@@ -165,7 +141,7 @@ def update_user_scores():
             winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
 
             # Get predictions for this match
-            predictions = session_db.query(Prediction).filter(Prediction.match_id == match.id).all()
+            predictions = db_session.query(Prediction).filter(Prediction.match_id == match.id).all()
 
             for prediction in predictions:
                 if team1_score == prediction.team1_score and team2_score == prediction.team2_score:
@@ -182,27 +158,27 @@ def update_user_scores():
             match.evaluation_Date = get_current_datetime_as_object()
 
     # Update total points in the users table (Query with help from chatGPT)
-    users = session_db.query(User).all()
+    users = db_session.query(User).all()
 
     # Update total_points for each user
     for user in users:
         # Update user total points
-        user.total_points = session_db.query(func.sum(Prediction.points)).filter(Prediction.user_id == user.id).scalar() or 0
+        user.total_points = db_session.query(func.sum(Prediction.points)).filter(Prediction.user_id == user.id).scalar() or 0
 
         # Correct predictions with 4 points
-        user.correct_result = session_db.query(func.count()).filter(Prediction.points == 4, Prediction.user_id == user.id).scalar() or 0
+        user.correct_result = db_session.query(func.count()).filter(Prediction.points == 4, Prediction.user_id == user.id).scalar() or 0
 
         # Correct goal diff predictions 3 points
-        user.correct_goal_diff = session_db.query(func.count()).filter(Prediction.points == 3, Prediction.user_id == user.id).scalar() or 0
+        user.correct_goal_diff = db_session.query(func.count()).filter(Prediction.points == 3, Prediction.user_id == user.id).scalar() or 0
 
         # Correct tendency predictions 2 points
-        user.correct_tendency = session_db.query(func.count()).filter(Prediction.points == 2, Prediction.user_id == user.id).scalar() or 0
+        user.correct_tendency = db_session.query(func.count()).filter(Prediction.points == 2, Prediction.user_id == user.id).scalar() or 0
 
     # Commit all changes to the database
-    session_db.commit()
+    db_session.commit()
 
 
-def insert_matches_to_db():
+def insert_matches_to_db(db_session):
     # Query openliga API with link from above
     matchdata = get_openliga_json(url_matchdata)
 
@@ -227,15 +203,15 @@ def insert_matches_to_db():
                 lastUpdateDateTime = match["lastUpdateDateTime"]
             )
             
-            session_db.add(match)
+            db_session.add(match)
 
-    session_db.commit()
+    db_session.commit()
 
 
 
-def update_matches_db():
+def update_matches_db(db_session):
     # Get unfinished matches of the local database
-    unfinished_matches_db = session_db.query(Match).filter(Match.matchIsFinished == 0).all()
+    unfinished_matches_db = db_session.query(Match).filter(Match.matchIsFinished == 0).all()
 
     for match in unfinished_matches_db:
         # Get matchdata openliga
@@ -251,13 +227,13 @@ def update_matches_db():
             last_update_time_openliga = normalize_datetime(last_update_time_openliga)
 
             if last_update_time_openliga > last_update_time_db:
-                update_match_in_db(matchdata_openliga)
+                update_match_in_db(matchdata_openliga, db_session)
         else:
             # Update if last update time is missing or inconsistent
-            update_match_in_db(matchdata_openliga)
+            update_match_in_db(matchdata_openliga, db_session)
 
 
-def update_match_in_db(match):
+def update_match_in_db(match, db_session):
     print("Updating match: ", match["matchID"])
     # Local variable if match is finished to distinguish team_scores
     matchFinished = match["matchIsFinished"]
@@ -274,10 +250,10 @@ def update_match_in_db(match):
         update_data[Match.team1_score] = match["matchResults"][1]["pointsTeam1"]
         update_data[Match.team2_score] = match["matchResults"][1]["pointsTeam2"]
 
-    session_db.query(Match).filter_by(id=match["matchID"]).update(update_data)
+    db_session.query(Match).filter_by(id=match["matchID"]).update(update_data)
 
     # Commit the session to persist data
-    session_db.commit()
+    db_session.commit()
 
 
 def download_and_resize_logos(teams):
@@ -310,42 +286,42 @@ def download_and_resize_logos(teams):
                 return None
 
 
-def get_insights():
+def get_insights(db_session):
     user_id = session["user_id"]
 
     # Predictions rated
-    predictions_rated = session_db.query(func.count(Prediction.id).label('predictions_rated'))\
+    predictions_rated = db_session.query(func.count(Prediction.id).label('predictions_rated'))\
         .join(Match, Match.id == Prediction.match_id)\
         .filter(Prediction.user_id == user_id, Match.matchIsFinished == 1)\
         .scalar()
 
     # Prediction count
-    prediction_count = session_db.query(func.count(Prediction.id).label('prediction_count'))\
+    prediction_count = db_session.query(func.count(Prediction.id).label('prediction_count'))\
         .filter(Prediction.user_id == user_id)\
         .scalar()
 
     # Finished matches
-    finished_matches = session_db.query(func.count(Match.id).label('completed_matches'))\
+    finished_matches = db_session.query(func.count(Match.id).label('completed_matches'))\
         .filter(Match.matchIsFinished == 1)\
         .scalar()
 
     # Total points of the user
-    total_points_user = session_db.query(User.total_points).filter(User.id == user_id).scalar()
+    total_points_user = db_session.query(User.total_points).filter(User.id == user_id).scalar()
 
     # User rank
-    subquery = session_db.query(
+    subquery = db_session.query(
         User.id,
         func.row_number().over(order_by=User.total_points.desc()).label('rank')
     ).subquery()
 
-    rank = session_db.query(subquery.c.rank).filter(subquery.c.id == user_id).scalar()
+    rank = db_session.query(subquery.c.rank).filter(subquery.c.id == user_id).scalar()
 
     # Base statistics for the user
-    base_stats = session_db.query(User.correct_result, User.correct_goal_diff, User.correct_tendency)\
+    base_stats = db_session.query(User.correct_result, User.correct_goal_diff, User.correct_tendency)\
         .filter(User.id == user_id).first()
 
     # Number of users
-    no_users = session_db.query(func.count(User.id).label('no_users')).scalar()
+    no_users = db_session.query(func.count(User.id).label('no_users')).scalar()
 
     # Store the statistics in the insights dictionary
     insights = {}
@@ -360,7 +336,7 @@ def get_insights():
     insights["total_games_predicted"] = prediction_count
     insights["missed_games"] = finished_matches - predictions_rated    
     insights["total_points"] = total_points_user
-    insights["username"] = session_db.query(User.username).filter(User.id == user_id).scalar()
+    insights["username"] = db_session.query(User.username).filter(User.id == user_id).scalar()
     insights["no_users"] = no_users
     insights["rank"] = rank
     insights["corr_result"] = base_stats.correct_result
@@ -385,20 +361,20 @@ def get_insights():
     return insights
 
 
-def is_update_needed_league_table():
+def is_update_needed_league_table(db_session):
     # If table is empty, fill teams table
-    empty_check_db = session_db.query(Team).all()
+    empty_check_db = db_session.query(Team).all()
 
     if not empty_check_db:
         print("teams table is empty, inserting teams first...")
-        insert_teams_to_db()
+        insert_teams_to_db(db_session)
         print("inserting done.")
 
     # Get current matchday by online query (returns the upcoming matchday after the middle of the week)
     current_matchday = get_current_matchday_openliga()
 
     # Get current matchday of the local database
-    current_match_db = session_db.query(Team.matches, Team.lastUpdateTime).order_by(Team.matches.desc()).first()
+    current_match_db = db_session.query(Team.matches, Team.lastUpdateTime).order_by(Team.matches.desc()).first()
     
     if current_matchday > current_match_db.matches:
         return True
@@ -427,18 +403,18 @@ def is_update_needed_league_table():
             return True
 
 
-def is_update_needed_matches():
+def is_update_needed_matches(db_session):
     # If matches table is empty, fill matches table
-    empty_check_db = session_db.query(Match).all()
+    empty_check_db = db_session.query(Match).all()
 
     if not empty_check_db:
         print("Matches table is empty, inserting matches first...")
-        insert_matches_to_db() 
+        insert_matches_to_db(db_session) 
         print("Inserting done.")
 
     # Get current matchday from API and DB (gets the closest in time matchday (also past matches are considered))
     current_matchday_API = get_current_matchday_openliga()
-    current_matchday_data_db = find_closest_in_time_match_db()
+    current_matchday_data_db = find_closest_in_time_match_db(db_session)
 
     # Get matchday and id from db based on the former query
     current_matchday_db = current_matchday_data_db.matchday
@@ -459,7 +435,7 @@ def is_update_needed_matches():
         lastUpdateTime_openliga = get_matchdata_openliga(current_matchday_id_db)["lastUpdateDateTime"]
 
         # Get last update time of the locally saved db
-        last_update_time_db = session_db.query(Match.lastUpdateDateTime).filter_by(id=current_matchday_id_db).scalar()
+        last_update_time_db = db_session.query(Match.lastUpdateDateTime).filter_by(id=current_matchday_id_db).scalar()
         
         # If a last update time exists for the next match
         if last_update_time_db and lastUpdateTime_openliga:
@@ -528,10 +504,10 @@ def resize_image(image_path, max_size=(100, 100)):
 
 
 
-def get_rangliste_data():
+def get_rangliste_data(db_session):
     # Query users and their predictions with a LEFT JOIN and ordering
     users_predictions = (
-        session_db.query(User, Prediction)
+        db_session.query(User, Prediction)
         .outerjoin(Prediction, User.id == Prediction.user_id)
         .order_by(desc(User.total_points), desc(User.correct_result), desc(User.correct_goal_diff), desc(User.correct_tendency), asc(Prediction.matchday))
         .all()
@@ -631,11 +607,11 @@ def normalize_datetime(input_dt):
     return dt_without_microseconds
 
 
-def find_closest_in_time_match_db():
+def find_closest_in_time_match_db(db_session):
     # Get current match from db based on which match is closest in time
     current_datetime = datetime.now()
     
-    current_matchday_data_db = session_db.query(
+    current_matchday_data_db = db_session.query(
         Match.matchday,
         Match.id
     ).order_by(
