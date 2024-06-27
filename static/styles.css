@@ -21,7 +21,7 @@ nav .navbar-brand .blue {
 
 .navbar {
     background-color: #20338a;
-    border-bottom: 8px solid #1668ff;
+    border-bottom: 8px solid rgb(22, 104, 255);
 }
 
 .navbar-nav .nav-link {
@@ -182,27 +182,33 @@ nav .navbar-brand .blue {
     margin-bottom: 0.1rem;
 }
 
-/* Responsive Design */
-
-/* Card Wrapper for Mobile */
-.card-wrapper {
-    display: none; /* Hide by default */
+/* CSS for responsive design */
+.table-responsive-desktop {
+    max-height: 620px; /* Adjust as needed */
+    overflow-y: auto;
 }
-
-@media (max-width: 300px) {
-    .table-wrapper {
-        display: none; /* Hide table on small screens */
-    }
-    .card-wrapper {
-        display: block; /* Show card layout on small screens */
-    }
-    .card {
-        margin-bottom: 1rem;
-    }
+.table-responsive-mobile {
+    max-height: 400px; /* Adjust as needed */
+    overflow-y: auto;
 }
-
-@media (min-width: 200px) {
-    .card-wrapper {
-        display: none; /* Hide card layout on larger screens */
+@media (max-width: 768px) {
+    .table-responsive-desktop {
+        display: none; /* Hide desktop table on small screens */
+    }
+    .table-responsive-mobile {
+        display: block; /* Show mobile table on small screens */
     }
 }
+@media (min-width: 768px) {
+    .table-responsive-desktop {
+        display: block; /* Show desktop table on large screens */
+    }
+    .table-responsive-mobile {
+        display: none; /* Hide mobile table on large screens */
+    }
+}
+
+
+.navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(22, 104, 255, 1)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+  }

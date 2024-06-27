@@ -197,6 +197,7 @@ def process_predictions(valid_matches, session, db_session, request):
         # Retrieve user input for team scores
         team1_score = request.form.get(f'team1Score_{match_id}')
         team2_score = request.form.get(f'team2Score_{match_id}')
+        print(f'Match ID: {match_id}, Team 1 Score: {team1_score}, Team 2 Score: {team2_score}')
 
         # Retrieve or create prediction entry
         prediction = db_session.query(Prediction).filter_by(user_id=session["user_id"], match_id=match_id).first()

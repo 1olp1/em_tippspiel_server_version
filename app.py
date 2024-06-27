@@ -2,10 +2,9 @@ from flask import flash, redirect, render_template, request, session
 from sqlalchemy import func, desc, asc
 from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_matches_db, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions
-from models import User, Team, Prediction, Match
+from helpers import login_required, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, get_current_datetime_as_object
+from models import User, Prediction, Match
 from config import app, get_db_session
-from collections import defaultdict
 
 @app.after_request
 def after_request(response):
@@ -118,7 +117,7 @@ def tippen():
 
         if request.method == "POST":
             process_predictions(valid_matches, session, db_session, request)
-
+            
         # Fetch all predictions for the current user
         predictions = db_session.query(Prediction).filter_by(user_id=session["user_id"]).all()
 
