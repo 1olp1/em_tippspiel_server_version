@@ -46,11 +46,11 @@
     <table class="table">
         <tbody>
             {% for match_date, matches in matches_by_date.items() %}
-                    <td class="table-date-header bottom-top"></td>
-                    <td colspan="5" class="table-date-header bottom-top">
+                    <td class="table-date-header"></td>
+                    <td colspan="5" class="table-date-header">
                         {{ match_date }}
                     </td>
-                    <td class="table-date-header bottom-top"></td>
+                    <td class="table-date-header"></td>
                 {% for match in matches %}
                     <tr>
                         <td class="text-center">{{ match.time }}</td>
@@ -83,11 +83,11 @@
         <tbody>
             {% for match_date, matches in matches_by_date.items() %}
                 <tr>
-                    <td class="table-date-header bottom-top"></td>
-                    <td colspan="6" class="table-date-header bottom-top">
+                    <td class="table-date-header"></td>
+                    <td colspan="6" class="table-date-header">
                         {{ match_date }}
                     </td>
-                    <td class="table-date-header bottom-top"></td>
+                    <td class="table-date-header"></td>
                 </tr>
                 {% for match in matches %}
                     <tr>
@@ -118,14 +118,8 @@
     </table>
 </div>
 
-<style>
-    .bottom-top{
-        border-top: 2px solid rgb(149, 149, 149);
-    }
-</style>
-
 <div style="display: flex; justify-content: space-between;">
-        <p class="last-update">Stand: {{ last_update }}</p>
+        <p class="last-update">Stand: {{ last_update  }}</p>
         <button type="submit" class="btn btn-primary btn-container">Speichern</button>
     </div>
 </form>

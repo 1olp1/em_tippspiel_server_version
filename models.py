@@ -38,10 +38,17 @@ class Match(Base):
     team2 = relationship("Team", foreign_keys=[team2_id], backref="matches_as_team2")
 
     @property
-    def formatted_matchDateTime(self):
+    def formatted_matchDate(self):
         date = self.matchDateTime
         weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
         match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%y')}"
+        return match_time_readable
+    
+    @property
+    def formatted_matchDateTime(self):
+        date = self.matchDateTime
+        weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
+        match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%y %H:%M')}"
         return match_time_readable
     
     @property

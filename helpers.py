@@ -580,12 +580,12 @@ def resize_image(image_path, max_size=(100, 100)):
             f.save(image_path)
 
 
-
-def get_rangliste_data(db_session):
-    # Query users and their predictions with a LEFT JOIN and ordering
+def get_rangliste_data(db_session, matchday):
+    # Query users and their predictions
     users_predictions = (
         db_session.query(User, Prediction)
         .outerjoin(Prediction, User.id == Prediction.user_id)
+        .filter_by(matchday=matchday)
         .order_by(desc(User.total_points), desc(User.correct_result), desc(User.correct_goal_diff), desc(User.correct_tendency), asc(Prediction.matchday))
         .all()
     )
@@ -727,6 +727,6 @@ def find_next_matchday_db(db_session):
 def group_matches_by_date(matches):
     matches_by_date = defaultdict(list)
     for match in matches:
-        match_date = match.formatted_matchDateTime
+        match_date = match.formatted_matchDate
         matches_by_date[match_date].append(match)
     return matches_by_date

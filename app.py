@@ -1,9 +1,11 @@
 from flask import flash, redirect, render_template, request, session
-from sqlalchemy import func
+from sqlalchemy import func, desc, asc
+from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
 from helpers import login_required, get_matches_db, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions
 from models import User, Team, Prediction, Match
 from config import app, get_db_session
+from collections import defaultdict
 
 @app.after_request
 def after_request(response):
@@ -13,24 +15,73 @@ def after_request(response):
     response.headers["Pragma"] = "no-cache"
     return response
 
-@app.route("/rangliste")
+@app.route("/rangliste", methods=["GET", "POST"])
 @login_required
 def rangliste():
-    with get_db_session() as db_session:        
+    with get_db_session() as db_session:
+        # Fetch all matches
+        matches = db_session.query(Match).all()
+
+        # Determine matchday_to_display based on session or default to closest matchday
+        if request.method == "GET":
+            matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
+            session['matchday_to_display'] = matchday_to_display
+        else:
+            matchday_to_display = session.get('matchday_to_display')
+
+        # Get list of matchdays and formatted matchdays for display
+        matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
+        matchdays, matchdays_formatted = zip(*matchdays_data)
+        
+        # Determine next and previous matchdays
+        current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
+        next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
+        prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
+
         # Get last update to display last update time in html
         last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
-        
+
         if not last_update:
             last_update = None
-        
         else:
             last_update = convert_iso_datetime_to_human_readable(last_update)
 
+        # Fetch all users sorted by multiple criteria
+        users = db_session.query(User).options(
+            joinedload(User.predictions)  # Ensures predictions are loaded with users
+        ).order_by(
+            desc(User.total_points),
+            desc(User.correct_result),
+            desc(User.correct_goal_diff),
+            desc(User.correct_tendency)
+        ).all()
+
+
+        # Fetch matches and predictions for the current matchday
+        filtered_matches = db_session.query(Match).filter_by(matchday=matchday_to_display).all()
+        filtered_predictions = db_session.query(Prediction).filter_by(matchday=matchday_to_display).all()
+
+        # Calculate user points for the matchday
+        user_points_matchday = {user.id: 0 for user in users}
+        for prediction in filtered_predictions:
+            user_points_matchday[prediction.user_id] += prediction.points
+
+        max_points = max(user_points_matchday.values(), default=0)
+        top_users = [user_id for user_id, points in user_points_matchday.items() if points == max_points and max_points != 0]
+
+
         return render_template("rangliste.html",
-                            matchdata=get_matches_db(db_session),
-                            users=get_rangliste_data(db_session),
-                            user_id=session["user_id"],
-                            last_update=last_update)
+                               matches=filtered_matches,
+                               prev_matchday=prev_matchday,
+                               next_matchday=next_matchday,
+                               matchday_to_display=matchday_to_display,
+                               matchdays_formatted=matchdays_formatted,
+                               users=users,
+                               user_id=session["user_id"],
+                               last_update=last_update,
+                               top_users=top_users,
+                               user_points_matchday=user_points_matchday
+                               )
     
 
 @app.route("/tippen", methods=["GET", "POST"])
@@ -56,7 +107,7 @@ def tippen():
         # Group matches by date
         filtered_matches_by_date = group_matches_by_date(filtered_matches)
         
-        # Get list of matchdays and formatted matchdays
+        # Get list of matchdays and formatted matchdays for display
         matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
         matchdays, matchdays_formatted = zip(*matchdays_data)
 

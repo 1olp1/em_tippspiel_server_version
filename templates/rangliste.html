@@ -5,41 +5,60 @@
 {% endblock %}
 
 {% block main %}
+
+<div class="pagination">
+    <ul class="pagination justify-content-center">
+        {% if prev_matchday %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('rangliste', matchday=prev_matchday) }}"><i class="fa-solid fa-caret-left"></i></a>
+            </li>
+        {% else %}
+            <li class="page-item disabled">
+                <a class="page-link" href="#"><i class="fa-solid fa-caret-left"></i></a>
+            </li>
+        {% endif %}
+        <li class="page-item dropdown">
+            <a class="page-link" href="#" role="button" id="dropdownMatchday" data-bs-toggle="dropdown" aria-expanded="false"> {{ matches[0].formatted_matchday }}</a>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMatchday">
+                <!-- dropdown items -->
+                {% for matchday in matchdays_formatted %}
+                    <li><a class="dropdown-item" href="{{ url_for('rangliste', matchday=loop.index) }}">{{ matchday }}</a></li>
+                {% endfor %}
+            </ul>
+        </li>
+        {% if next_matchday %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('rangliste', matchday=next_matchday) }}"><i class="fa-solid fa-caret-right"></i></a>
+            </li>
+        {% else %}
+            <li class="page-item disabled">
+                <a class="page-link" href="#"><i class="fa-solid fa-caret-right"></i></a>
+            </li>
+        {% endif %}
+    </ul>
+</div>
+
 <div class="text-center">
-    <div class="table-responsive" style="max-width: 1000px;">
+    <div class="table-responsive">
         <table class="table rounded-4 overflow-hidden">
             <thead>
                 <tr>
-                    <th colspan="2" class="text-left">Spieltag</th>
-                    {% for match in matchdata %}
-                        {% if match.matchday <= 3 %}
-                            <td>{{ match.matchday }}.</td>
-                        {% else %}
-                            <td>
-                                {% if match.matchday == 4 %} AF
-                                {% elif match.matchday == 5 %} VF
-                                {% elif match.matchday == 6 %} HF
-                                {% elif match.matchday == 7 %} Finale
-                                {% endif %}
-                            </td>
-                        {% endif %}
+                    <th colspan="2" class="text-left"></th>
+                    {% for match in matches %}
+                        <td> {{ match.team1.shortName }} </td>
                     {% endfor %}
                     <td colspan="4"></td>
                 </tr>
                 <tr>
-                    <th colspan="2" class="text-left">Begegnung</th>
-                    {% for match in matchdata %}
-                        <td>
-                            <img src="{{ match.team1.teamIconPath }}" alt="{{ match.team1.shortName }}-logo" class="team-logo-small">
-                            <span>&nbsp;:&nbsp;</span>
-                            <img src="{{ match.team2.teamIconPath }}" alt="{{ match.team2.shortName }}-logo" class="team-logo-small">
-                        </td>
+                    <th colspan="2" class="text-left"></th>
+                    {% for match in matches %}
+                        <td> {{ match.team2.shortName }}</td>
                     {% endfor %}
                     <td colspan="4"></td>
                 </tr>
                 <tr class="bottom-border">
-                    <th colspan="2" class="text-left">Ergebnis</th>
-                    {% for match in matchdata %}
+                    <th colspan="2" class="text-left"></th>
+                    {% for match in matches %}
                         <td>
                             {% if match.team1_score is not none %}
                                 {{ match.team1_score }}:{{ match.team2_score }}
@@ -48,10 +67,8 @@
                             {% endif %}
                         </td>
                     {% endfor %}
-                    <td>4 P.</td>
-                    <td>3 P.</td>
-                    <td>2 P.</td>
-                    <td>Ges.</td>
+                    <td>P</td>
+                    <td><strong>G</strong></td>
                 </tr>
             </thead>
             <tbody>
@@ -59,7 +76,7 @@
                     <tr class="{% if user.id == user_id %}table-primary{% endif %}">
                         <td>{{ loop.index }}</td>
                         <td>{{ user.username }}</td>
-                        {% for match in matchdata %}
+                        {% for match in matches %}
                             {% set prediction = user.predictions|selectattr("match_id", "equalto", match.id)|first %}
                             <td>
                                 {% if prediction %}
@@ -67,7 +84,7 @@
                                         <span class="{% if prediction.points == 0 %} prediction-wrong {% endif %}">
                                             {{ prediction.team1_score }}:{{ prediction.team2_score }}
                                         </span> 
-                                        {% if match.predictions_evaluated == 0 and prediction.points > 0%}
+                                        {% if match.predictions_evaluated == 1 and prediction.points > 0%}
                                             <sub class="sub-correct">{{ prediction.points }}</sub>
                                         {% endif %}
                                     {% else %}
@@ -78,11 +95,16 @@
                                 {% endif %}
                             </td>
                         {% endfor %}
-                        <td>{{ user.correct_result }}</td>
-                        <td>{{ user.correct_goal_diff }}</td>
-                        <td>{{ user.correct_tendency }}</td>
-                        <td>{{ user.total_points }}</td>
-                    </tr>
+                        {% if user.id in top_users %}
+                            <td style="color: rgb(173, 11, 11);
+">
+                        {% else %}
+                            <td>
+                        {% endif %}                 
+                        {{ user_points_matchday[user.id] }}
+                            </td>
+                        <td> {{ user.total_points }}</td>
+                        </tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -91,4 +113,5 @@
         <p>Stand: {{ last_update }}</p>
     </div>
 </div>
+
 {% endblock %}
