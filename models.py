@@ -41,9 +41,22 @@ class Match(Base):
     def formatted_matchDateTime(self):
         date = self.matchDateTime
         weekday_names = ["Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa.", "So."]
-        match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%Y %H:%M')}"
+        match_time_readable = f"{weekday_names[date.weekday()]} {date.strftime('%d.%m.%y')}"
         return match_time_readable
     
+    @property
+    def formatted_groupname(self):
+        matchday = self.matchday
+        if matchday < 4:
+            team_group_name = self.teamGroupName
+            return team_group_name[0].replace("Gruppe ", "") if team_group_name else '-'
+        else:
+            return '-'
+
+    @property
+    def time(self):
+        return self.matchDateTime.strftime('%H:%M')
+
     @property
     def is_underway(self):
         current_datetime = datetime.now()
@@ -52,6 +65,33 @@ class Match(Base):
             return True
         else:
             return False
+        
+    @property
+    def formatted_matchday(self):
+        matchday = self.matchday
+        if matchday <=3:
+            return f"{matchday}. Spieltag"
+        elif matchday == 4:
+            return "Achtelfinale"
+        elif matchday == 5:
+            return "Viertelfinale"
+        elif matchday == 6:
+            return "Halbfinale"
+        elif matchday == 7:
+            return "Finale"
+        
+    @property
+    def formatted_matchday_short(self):
+        if self.matchday <=3:
+            return f"{self.matchday}. Sp."
+        elif self.matchday == 4:
+            return "AF"
+        elif self.matchday == 5:
+            return "VF"
+        elif self.matchday == 6:
+            return "HF"
+        elif self.matchday == 7:
+            return "F"
 
 class Team(Base):
     __tablename__ = 'teams'

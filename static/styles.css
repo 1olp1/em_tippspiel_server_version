@@ -34,10 +34,20 @@ nav .navbar-brand .blue {
 .table {
     margin-bottom: 10px; /* Adds bottom margin between tables */
     width: 100%;
+    border-radius: 10px;
+    border-spacing: 0;
+    overflow: hidden;
 }
 
-.table-bordered {
-    border-collapse: collapse;
+.table-responsive-desktop {
+    max-height: 620px; /* Adjust as needed */
+    overflow-y: auto;
+}
+
+
+.table-responsive-mobile {
+    max-height: 300px; /* Adjust as needed */
+    overflow-y: auto;
 }
 
 .table-bordered td, .table-bordered th {
@@ -49,6 +59,7 @@ nav .navbar-brand .blue {
     font-weight: bold; /* Make table headers bold */
     background-color: #ffffff; /* Background color for headers */
     color:#19303B;
+    vertical-align: middle;
 }
 
 .table td {
@@ -56,6 +67,11 @@ nav .navbar-brand .blue {
     vertical-align: middle;
     white-space: nowrap;
     color:#19303B;
+}
+
+.table-date-header {
+    font-weight: bold;
+    text-align: center;
 }
 
 /* For colouring the score if the prediction was wrong */
@@ -82,9 +98,6 @@ nav .navbar-brand .blue {
     border-bottom: 2px solid #19303B; /* Border at the bottom of header */
 }
 
-.bottom-border {
-    border-bottom: 1px solid #19303B; /* Border at the bottom */
-}
 
 /* Logo Styling */
 .team-logo, .team-logo-small {
@@ -94,8 +107,10 @@ nav .navbar-brand .blue {
 }
 
 .team-logo {
-    width: 34px;
-    height: 34px;
+    width: 24px;
+    height: 24px;
+    margin-left: 2px;
+    margin-right: 2px;
 }
 
 .team-logo-small {
@@ -117,15 +132,16 @@ nav .navbar-brand .blue {
 }
 
 /* Additional Classes */
-.table-wrapper {
-    max-height: 700px;
-    overflow: auto;
-    display: inline-block;
-}
+
 
 .score-input {
     width: 43px; /* Adjust width as needed */
     text-align: center; /* Center text within input */
+    display: inline-block; /* Ensures inputs stay on the same line */
+}
+
+.form-control.score-input {
+    width: 40px; /* Adjust width as needed */
 }
 
 .btn-container {
@@ -161,8 +177,32 @@ nav .navbar-brand .blue {
 /* Index route formatting */
 .card-text, .stats {
     display: flex;
-    justify-content: space-between;
 }
 .stats {
     margin-bottom: 0.1rem;
+}
+
+/* Responsive Design */
+
+/* Card Wrapper for Mobile */
+.card-wrapper {
+    display: none; /* Hide by default */
+}
+
+@media (max-width: 300px) {
+    .table-wrapper {
+        display: none; /* Hide table on small screens */
+    }
+    .card-wrapper {
+        display: block; /* Show card layout on small screens */
+    }
+    .card {
+        margin-bottom: 1rem;
+    }
+}
+
+@media (min-width: 200px) {
+    .card-wrapper {
+        display: none; /* Hide card layout on larger screens */
+    }
 }

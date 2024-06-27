@@ -1,7 +1,7 @@
 from flask import flash, redirect, render_template, request, session
 from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_matches_db, get_league_table, get_current_datetime_as_object, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, normalize_datetime
+from helpers import login_required, get_matches_db, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions
 from models import User, Team, Prediction, Match
 from config import app, get_db_session
 
@@ -31,86 +31,56 @@ def rangliste():
                             users=get_rangliste_data(db_session),
                             user_id=session["user_id"],
                             last_update=last_update)
-
+    
 
 @app.route("/tippen", methods=["GET", "POST"])
 @login_required
 def tippen():
     with get_db_session() as db_session:
+        # Fetch all matches
         matches = db_session.query(Match).all()
-        valid_matches = []
 
-        for match in matches:
-            # Make list of matches that are valid for prediction, e.g. not finished and not started
-            if match.matchIsFinished == 0 and get_current_datetime_as_object() < match.matchDateTime:
-                valid_matches.append(match)
-            
-            if match.matchday < 4:
-                team_group_name = db_session.query(Team.teamGroupName).filter(Team.id == match.team1_id).first()
-                match.teamGroupName = team_group_name[0].replace("Gruppe ", "") if team_group_name else '-'
-            else:
-                match.teamGroupName = '-'
+        # Filter valid matches for predictions
+        valid_matches = get_valid_matches(matches)
 
-        if request.method =="POST":
-            # Iterate through every match TODO: for match in valid_matches!
-            for match in matches:
-                match_id = match.id
-                matchday = match.matchday
+        # Determine matchday_to_display based on session or default to closest matchday
+        if request.method == "GET":
+            matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
+            session['matchday_to_display'] = matchday_to_display
+        else:
+            matchday_to_display = session.get('matchday_to_display')
 
-                # Get user predictions for the match
-                team1_score = request.form.get(f'team1Score_{match_id}')
-                team2_score = request.form.get(f'team2Score_{match_id}')
+        # Filter matches by matchday parameter or default to closest matchday
+        filtered_matches = [match for match in matches if match.matchday == matchday_to_display]
 
-                # Check for valid input. If it is valid, convert to int. Else, continue to next match iteration
-                if team1_score and team2_score:
-                    if team1_score.isdigit() and team2_score.isdigit():
-                            team1_score = int(team1_score)
-                            team2_score = int(team2_score)
-                    else:
-                        continue
-                else:
-                    continue
+        # Group matches by date
+        filtered_matches_by_date = group_matches_by_date(filtered_matches)
+        
+        # Get list of matchdays and formatted matchdays
+        matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
+        matchdays, matchdays_formatted = zip(*matchdays_data)
 
-                winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
+        # Determine next and previous matchdays
+        current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
+        next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
+        prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
 
-                # Get the last prediction for the match
-                prediction = db_session.query(Prediction).filter_by(user_id=session["user_id"], match_id=match_id).first()
+        if request.method == "POST":
+            process_predictions(valid_matches, session, db_session, request)
 
-                # If it exists and differs from the original prediction, update the prediction
-                if prediction:
-                    if team1_score != prediction.team1_score or team2_score != prediction.team2_score:
-                        prediction.team1_score = team1_score
-                        prediction.team2_score = team2_score
-                        prediction.goal_diff = team1_score - team2_score
-                        prediction.winner = winner
-                        prediction.prediction_date = get_current_datetime_as_object()
-                # If there is no prediction in the db, insert it
-                else:
-                    new_prediction = Prediction(
-                        user_id=session["user_id"],
-                        matchday=matchday,
-                        match_id=match_id,
-                        team1_score=team1_score,
-                        team2_score=team2_score,
-                        goal_diff=team1_score - team2_score,
-                        winner=winner,
-                        prediction_date=get_current_datetime_as_object()
-                    )
-                    db_session.add(new_prediction)
-            
-            db_session.commit()
-    
-        # Get all predictions from the user
+        # Fetch all predictions for the current user
         predictions = db_session.query(Prediction).filter_by(user_id=session["user_id"]).all()
 
-        # Get time of last update
+        # Get time of last match update
         last_update = db_session.query(func.max(Match.lastUpdateDateTime)).scalar()
-        
-        # If an entry for last update exists, format for displaying
+
+        # Format last update time for display
         if last_update:
             last_update = convert_iso_datetime_to_human_readable(last_update)
 
-        return render_template("tippen.html", matches=matches, predictions=predictions, valid_matches=valid_matches, last_update=last_update)
+        return render_template('tippen.html', matches=filtered_matches, matchdays=matchdays, matchdays_formatted=matchdays_formatted,
+                               next_matchday=next_matchday, prev_matchday=prev_matchday, last_update=last_update,
+                               predictions=predictions, valid_matches=valid_matches, matches_by_date=filtered_matches_by_date)
 
 
 @app.route("/gruppen")
@@ -182,29 +152,30 @@ def login():
             
             # Update league table and match data if needed
             try:
+                print("Is update needed for league table?")
                 if is_update_needed_league_table(db_session):
-                    print("Yes. Updating league table...")
+                    print("/tYes. Updating league table...")
                     update_league_table(db_session)
-                    print("League table update finished.")
+                    print("/tLeague table update finished.")
+                
+                else:
+                    print("No update needed.")
 
                 print("Is update needed for matches?")
                 if is_update_needed_matches(db_session):
-                    print("Yes. Updating matches database...")
+                    print("\tYes. Updating matches database...")
                     update_matches_db(db_session)
 
                     # Update user scores
-                    print("Updating user scores...")
+                    print("\tUpdating user scores...")
                     update_user_scores(db_session)
-                    print("User scores update finished.")
+                    print("\tUser scores update finished.")
                 
                 else:
-                    print("No update needed")
+                    print("\tNo update needed.")
 
             except Exception as e:
                 print(f"Update failed: {e}")
-
-            update_user_scores(db_session)
-
 
             # Redirect user to home page
             return redirect("/")
