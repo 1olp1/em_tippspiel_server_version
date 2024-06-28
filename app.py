@@ -3,7 +3,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday, update_db
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -199,6 +199,7 @@ def index():
         app.logger.error(f"Database connection error: {e}")
         return "Database connection error, please try again later.", 500
 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Log user in"""
@@ -228,6 +229,8 @@ def login():
                 # Remember which user has logged in
                 session["user_id"] = user.id
 
+                update_db(db_session)
+
                 # Redirect user to home page
                 return redirect("/")
 
@@ -239,41 +242,6 @@ def login():
         app.logger.error(f"Database connection error: {e}")
         return "Database connection error, please try again later.", 500
     
-
-@app.before_request
-def before_request():
-    """Update league table and match data if needed before each request"""
-    try:
-        with get_db_session() as db_session:
-            try:
-                print("Is update needed for league table?")
-                if is_update_needed_league_table(db_session):
-                    print("\tYes. Updating league table...")
-                    update_league_table(db_session)
-                    print("\tLeague table update finished.")
-                
-                else:
-                    print("No update needed.")
-
-                print("Is update needed for matches?")
-                if is_update_needed_matches(db_session):
-                    print("\tYes. Updating matches database...")
-                    update_matches_db(db_session)
-
-                    # Update user scores
-                    print("\tUpdating user scores...")
-                    update_user_scores(db_session)
-                    print("\tUser scores update finished.")
-                
-                else:
-                    print("\tNo update needed.")
-
-            except Exception as e:
-                app.logger.error(f"Update failed: {e}")
-
-    except OperationalError as e:
-        app.logger.error(f"Database connection error during update: {e}")
-
 
 @app.route("/logout")
 def logout():

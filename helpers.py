@@ -71,7 +71,35 @@ def get_openliga_json(url):
 
 def get_league_table(db_session):        
     return db_session.query(Team).order_by(Team.teamRank.asc()).all()
+
+
+def update_db(db_session):
+    try:
+        print("Is update needed for league table?")
+        if is_update_needed_league_table(db_session):
+            print("\tYes. Updating league table...")
+            update_league_table(db_session)
+            print("\tLeague table update finished.")
         
+        else:
+            print("No update needed.")
+
+        print("Is update needed for matches?")
+        if is_update_needed_matches(db_session):
+            print("\tYes. Updating matches database...")
+            update_matches_db(db_session)
+
+            # Update user scores
+            print("\tUpdating user scores...")
+            update_user_scores(db_session)
+            print("\tUser scores update finished.")
+        
+        else:
+            print("\tNo update needed.")
+
+    except Exception as e:
+        app.logger.error(f"Update failed: {e}")
+
 
 def insert_teams_to_db(db_session):
     print("Inserting teams to db")
