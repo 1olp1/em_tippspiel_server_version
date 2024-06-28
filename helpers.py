@@ -1,5 +1,6 @@
 from flask import flash, redirect, session
 from sqlalchemy import func, text, desc, asc
+from sqlalchemy.orm import joinedload
 from functools import wraps
 import requests
 import uuid
@@ -8,7 +9,7 @@ from PIL import Image
 from datetime import datetime
 from models import User, Match, Team, Prediction
 from collections import defaultdict
-
+from config import app
 # Prepare API requests
 league = "em"      # bl1 for 1. Bundesliga
 league_id = 4708
@@ -75,16 +76,16 @@ def get_league_table(db_session):
 
 def update_db(db_session):
     try:
-        print("Is update needed for league table?")
+        print("\nIs update needed for league table?")
         if is_update_needed_league_table(db_session):
             print("\tYes. Updating league table...")
             update_league_table(db_session)
             print("\tLeague table update finished.")
         
         else:
-            print("No update needed.")
+            print("\tNo update needed.")
 
-        print("Is update needed for matches?")
+        print("\nIs update needed for matches?")
         if is_update_needed_matches(db_session):
             print("\tYes. Updating matches database...")
             update_matches_db(db_session)
@@ -414,106 +415,84 @@ def get_insights(db_session):
 
 
 def is_update_needed_league_table(db_session):
-    # If table is empty, fill teams table
-    empty_check_db = db_session.query(Team).all()
-
-    if not empty_check_db:
-        print("teams table is empty, inserting teams first...")
+    # Check if teams table is empty and insert teams if needed
+    if not db_session.query(Team).first():
+        print("Teams table is empty, inserting teams first...")
         insert_teams_to_db(db_session)
-        print("inserting done.")
+        print("Inserting done.")
 
-    # Get current matchday by online query (returns the upcoming matchday after the middle of the week)
-    current_matchday = get_current_matchday_openliga()
+    # Get current matchday from API and DB
+    current_matchday_API = get_current_matchday_openliga()
+    current_match_db = find_closest_in_time_match_db(db_session)
 
-    # Get current matchday of the local database
-    current_match_db = db_session.query(Team.matches, Team.lastUpdateTime).order_by(Team.matches.desc()).first()
-    
-    if current_matchday > current_match_db.matches:
+    current_matchday_db = current_match_db.matchday if current_match_db else None
+
+    # Compare matchdays and if they're the same, check for update times
+    if current_matchday_API > current_matchday_db:
         return True
 
-    # Last update times if the matchday is equal
-    else:
-         # Get last update time of the online matchdata
-        lastUpdateTime_openliga = get_last_online_change(current_matchday)
+    if current_matchday_API == current_matchday_db:
+        # Get last update times
+        lastUpdateTime_openliga = normalize_datetime(get_last_online_change(current_matchday_API))
+        last_update_time_db = normalize_datetime(current_match_db.team1.lastUpdateTime) if current_match_db else None
 
-        lastUpdateTime_db = current_match_db.lastUpdateTime
-        
-        if lastUpdateTime_db:
-            # Convert dates to comparable format
-            lastUpdateTime_openliga = normalize_datetime(lastUpdateTime_openliga)
-            lastUpdateTime_db = normalize_datetime(lastUpdateTime_db)
+        # Print for debugging
+        print(f"\tLast update time openliga: {lastUpdateTime_openliga}")
+        print(f"\tLast update time db: {last_update_time_db}")
 
-            # If online data is more recent, update the database
-            if lastUpdateTime_openliga > lastUpdateTime_db:
-                return True
-            
-            else:
-                return False
-            
-        else:
-            # When there are no comparable update times, update anyway to be on the safe side
-            return True
+        # Update if online data is more recent
+        if lastUpdateTime_openliga and last_update_time_db:
+            return lastUpdateTime_openliga > last_update_time_db
+
+        # Update if there are no comparable update times
+        return True
+
+    return False
 
 
 def is_update_needed_matches(db_session):
-    # If matches table is empty, fill matches table
-    empty_check_db = db_session.query(Match).all()
-
-    if not empty_check_db:
+    # Check if matches table is empty and insert matches if needed
+    if not db_session.query(Match).first():
         print("\tMatches table is empty, inserting matches first...")
-        insert_matches_to_db(db_session) 
+        insert_matches_to_db(db_session)
         print("\tInserting done.")
         print("\tUpdating user scores.")
         update_user_scores(db_session)
         print("\tUser scores updated.")
 
-    # Get current matchday from API and DB (gets the closest in time matchday (also past matches are considered))
+    # Get current matchday from API and DB
     current_matchday_API = get_current_matchday_openliga()
-    current_matchday_data_db = find_closest_in_time_match_db(db_session)
+    current_match_db = find_closest_in_time_match_db(db_session)
 
-    # Get matchday and id from db based on the former query
-    current_matchday_db = current_matchday_data_db.matchday
-    current_matchday_id_db = current_matchday_data_db.id
+    current_matchday_db = current_match_db.matchday if current_match_db else None
 
     # Print to enable debugging for comparison of matchdays
     print("\tCurrent matchday local: ", current_matchday_db)
     print("\tCurrent matchday API: ", current_matchday_API)
 
-    ### Compare matchdays and if they're the same check for update times
-    if current_matchday_db < current_matchday_API:
+    # Compare matchdays and if they're the same, check for update times
+    if current_matchday_API > current_matchday_db:
         return True
     
-    # If the next matchdays are the same, check for last update times
-    elif current_matchday_db == current_matchday_API:
+    if current_matchday_API == current_matchday_db:
+        # Get last update times
+        lastUpdateTime_openliga = normalize_datetime(get_last_online_change(current_matchday_API))
+        last_updated_match = get_most_recent_match_by_matchday(db_session, current_matchday_API)
+        last_update_time_db = normalize_datetime(last_updated_match.lastUpdateDateTime) if last_updated_match else None
 
-        # Get last online update for the match
-        lastUpdateTime_openliga = get_last_online_change(current_matchday_API)
+        # Print for debugging
+        print(f"\tLast update time openliga: {lastUpdateTime_openliga}")
+        print(f"\tLast update time db: {last_update_time_db}")
 
-        # Get last update time of the locally saved db
-        last_update_time_db = db_session.query(Match.lastUpdateDateTime).filter_by(id=current_matchday_id_db).scalar()
+        # Update if online data is more recent
+        if lastUpdateTime_openliga and last_update_time_db:
+            return lastUpdateTime_openliga > last_update_time_db
+
+        # Update if there are no comparable update times
+        return True
+
+    return False
         
-        # If a last update time exists for the next match
-        if last_update_time_db and lastUpdateTime_openliga:
-            # Convert dates to comparable format
-            lastUpdateTime_openliga = normalize_datetime(lastUpdateTime_openliga)
-            last_update_time_db = normalize_datetime(last_update_time_db)
-
-            # If online data is more recent, update the database
-            print("\tLast update time openliga:", lastUpdateTime_openliga)
-            print("\tLast update time db:", last_update_time_db)
-            if lastUpdateTime_openliga > last_update_time_db:
-                return True
-            
-            else:
-                return False
-            
-        else:
-            # When there are no comparable update times, update anyway to be on the safe side
-            return True
-        
-    else:
-        False
-
 
 def update_matches_db(db_session):
     # Get unfinished matches of the local database
@@ -718,8 +697,10 @@ def find_closest_in_time_match_db(db_session):
     current_datetime = datetime.now()
     
     current_matchday_data_db = db_session.query(
-        Match.matchday,
-        Match.id,
+        Match
+    ).options(
+        joinedload(Match.team1),
+        joinedload(Match.team2)
     ).order_by(
         func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
     ).first()           # Query by chatgpt
@@ -767,6 +748,10 @@ def find_next_matchday_db(db_session):
     ).first()
 
     return next_matchday_db.matchday
+
+def get_most_recent_match_by_matchday(db_session, current_matchday_API):
+    most_recent_match = db_session.query(Match).filter_by(matchday=current_matchday_API).order_by(desc(Match.lastUpdateDateTime)).first()
+    return most_recent_match
 
 
 def group_matches_by_date(matches):

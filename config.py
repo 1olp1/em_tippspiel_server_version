@@ -36,3 +36,4 @@ session_db = scoped_session(SessionFactory)
 
 def get_db_session():
     return session_db()
+

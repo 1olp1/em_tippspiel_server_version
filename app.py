@@ -7,6 +7,7 @@ from helpers import login_required, get_league_table, get_valid_matches, convert
 from models import User, Prediction, Match
 from config import app, get_db_session
 
+
 @app.after_request
 def after_request(response):
     """Ensure responses aren't cached"""
@@ -14,6 +15,7 @@ def after_request(response):
     response.headers["Expires"] = 0
     response.headers["Pragma"] = "no-cache"
     return response
+
 
 @app.route("/rangliste", methods=["GET", "POST"])
 @login_required
