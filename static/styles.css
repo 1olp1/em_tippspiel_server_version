@@ -188,7 +188,7 @@ nav .navbar-brand .blue {
     overflow-y: auto;
 }
 .table-responsive-mobile {
-    max-height: 400px; /* Adjust as needed */
+    max-height: 320px; /* Adjust as needed */
     overflow-y: auto;
 }
 @media (max-width: 768px) {
