@@ -3,8 +3,6 @@ from flask_session import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.exc import OperationalError
-import time
 import os
 
 app = Flask(__name__)
@@ -15,6 +13,7 @@ app.config["SESSION_TYPE"] = "filesystem"
 app.config["DEBUG"] = True
 Session(app)
 
+# SQLAlchemy database URI
 SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{username}:{password}@{hostname}/{databasename}'.format(
     username=os.getenv('DB_USERNAME'),
     password=os.getenv('DB_PASSWORD'),
@@ -23,23 +22,17 @@ SQLALCHEMY_DATABASE_URI = 'mysql+mysqlconnector://{username}:{password}@{hostnam
 )
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
-app.config["SQLALCHEMY_POOL_RECYCLE"] = 280  # Setting pool recycle to 280 seconds
-app.config["SQLALCHEMY_POOL_TIMEOUT"] = 30   # Timeout for getting a connection from the pool
-app.config["SQLALCHEMY_POOL_SIZE"] = 10      # Number of connections to keep in the pool
-app.config["SQLALCHEMY_MAX_OVERFLOW"] = 20   # Allow extra connections to be created above pool size
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Create SQLAlchemy engine and session
-engine = create_engine(SQLALCHEMY_DATABASE_URI, poolclass=QueuePool)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URI,
+    poolclass=QueuePool,
+    pool_recycle=280,  # Recycle connections after 280 seconds
+    pool_pre_ping=True  # Enable connection testing
+)
 SessionFactory = sessionmaker(bind=engine)
 session_db = scoped_session(SessionFactory)
 
-def get_db_session(retries=3, delay=5):
-    attempt = 0
-    while attempt < retries:
-        try:
-            return session_db()
-        except OperationalError as e:
-            attempt += 1
-            if attempt >= retries:
-                raise e
-            time.sleep(delay)  # Wait before retrying
+def get_db_session():
+    return session_db()
