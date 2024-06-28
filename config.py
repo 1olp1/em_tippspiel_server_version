@@ -3,6 +3,8 @@ from flask_session import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
+from sqlalchemy.exc import OperationalError
+import time
 import os
 
 app = Flask(__name__)
@@ -31,5 +33,13 @@ engine = create_engine(SQLALCHEMY_DATABASE_URI, poolclass=QueuePool)
 SessionFactory = sessionmaker(bind=engine)
 session_db = scoped_session(SessionFactory)
 
-def get_db_session():
-    return session_db()
+def get_db_session(retries=3, delay=5):
+    attempt = 0
+    while attempt < retries:
+        try:
+            return session_db()
+        except OperationalError as e:
+            attempt += 1
+            if attempt >= retries:
+                raise e
+            time.sleep(delay)  # Wait before retrying

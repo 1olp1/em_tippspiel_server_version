@@ -18,172 +18,186 @@ def after_request(response):
 @app.route("/rangliste", methods=["GET", "POST"])
 @login_required
 def rangliste():
-    with get_db_session() as db_session:
-        # Fetch all matches
-        matches = db_session.query(Match).all()
+    try:
+        with get_db_session() as db_session:
+            # Fetch all matches
+            matches = db_session.query(Match).all()
 
-        # Determine matchday_to_display based on session or default to closest matchday
-        if request.method == "GET":
-            closest_in_time_match = find_closest_in_time_match_db(db_session)
-            matchday_to_display = int(request.args.get('matchday', closest_in_time_match.matchday))
-            session['matchday_to_display'] = matchday_to_display
-        else:
-            matchday_to_display = session.get('matchday_to_display')
+            # Determine matchday_to_display based on session or default to closest matchday
+            if request.method == "GET":
+                closest_in_time_match = find_closest_in_time_match_db(db_session)
+                matchday_to_display = int(request.args.get('matchday', closest_in_time_match.matchday))
+                session['matchday_to_display'] = matchday_to_display
+            else:
+                matchday_to_display = session.get('matchday_to_display')
 
-        # Get list of matchdays and formatted matchdays for display
-        matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
-        matchdays, matchdays_formatted = zip(*matchdays_data)
+            # Get list of matchdays and formatted matchdays for display
+            matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
+            matchdays, matchdays_formatted = zip(*matchdays_data)
+            
+            # Determine next and previous matchdays
+            current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
+            next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
+            prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
+
+            # Get last update to display last update time in html
+            last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
+
+            if not last_update:
+                last_update = None
+            else:
+                last_update = convert_iso_datetime_to_human_readable(last_update)
+
+            # Fetch all users sorted by multiple criteria
+            users = db_session.query(User).options(
+                joinedload(User.predictions)  # Ensures predictions are loaded with users
+            ).order_by(
+                desc(User.total_points),
+                desc(User.correct_result),
+                desc(User.correct_goal_diff),
+                desc(User.correct_tendency)
+            ).all()
+
+
+            # Fetch matches and predictions for the current matchday
+            filtered_matches = db_session.query(Match).filter_by(matchday=matchday_to_display).all()
+            filtered_predictions = db_session.query(Prediction).filter_by(matchday=matchday_to_display).all()
+
+            # Calculate user points for the matchday
+            user_points_matchday = {user.id: 0 for user in users}
+            for prediction in filtered_predictions:
+                user_points_matchday[prediction.user_id] += prediction.points
+
+            max_points = max(user_points_matchday.values(), default=0)
+            top_users = [user_id for user_id, points in user_points_matchday.items() if points == max_points and max_points != 0]
+            match_ids = [match.id for match in filtered_matches]
+            index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
+            no_filtered_matches = len(match_ids)
+
+
+            return render_template("rangliste2.html",
+                                matches=filtered_matches,
+                                prev_matchday=prev_matchday,
+                                next_matchday=next_matchday,
+                                matchday_to_display=matchday_to_display,
+                                matchdays_formatted=matchdays_formatted,
+                                users=users,
+                                user_id=session["user_id"],
+                                last_update=last_update,
+                                top_users=top_users,
+                                user_points_matchday=user_points_matchday,
+                                index_of_closest_in_time_match=index_of_closest_in_time_match,
+                                no_matches=no_filtered_matches
+                                )
         
-        # Determine next and previous matchdays
-        current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
-        next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
-        prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
-
-        # Get last update to display last update time in html
-        last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
-
-        if not last_update:
-            last_update = None
-        else:
-            last_update = convert_iso_datetime_to_human_readable(last_update)
-
-        # Fetch all users sorted by multiple criteria
-        users = db_session.query(User).options(
-            joinedload(User.predictions)  # Ensures predictions are loaded with users
-        ).order_by(
-            desc(User.total_points),
-            desc(User.correct_result),
-            desc(User.correct_goal_diff),
-            desc(User.correct_tendency)
-        ).all()
-
-
-        # Fetch matches and predictions for the current matchday
-        filtered_matches = db_session.query(Match).filter_by(matchday=matchday_to_display).all()
-        filtered_predictions = db_session.query(Prediction).filter_by(matchday=matchday_to_display).all()
-
-        # Calculate user points for the matchday
-        user_points_matchday = {user.id: 0 for user in users}
-        for prediction in filtered_predictions:
-            user_points_matchday[prediction.user_id] += prediction.points
-
-        max_points = max(user_points_matchday.values(), default=0)
-        top_users = [user_id for user_id, points in user_points_matchday.items() if points == max_points and max_points != 0]
-        match_ids = [match.id for match in filtered_matches]
-        index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
-        no_filtered_matches = len(match_ids)
-
-
-        return render_template("rangliste2.html",
-                               matches=filtered_matches,
-                               prev_matchday=prev_matchday,
-                               next_matchday=next_matchday,
-                               matchday_to_display=matchday_to_display,
-                               matchdays_formatted=matchdays_formatted,
-                               users=users,
-                               user_id=session["user_id"],
-                               last_update=last_update,
-                               top_users=top_users,
-                               user_points_matchday=user_points_matchday,
-                               index_of_closest_in_time_match=index_of_closest_in_time_match,
-                               no_matches=no_filtered_matches
-                               )
-    
+    except OperationalError as e:
+        app.logger.error(f"Database connection error: {e}")
+        return "Database connection error, please try again later.", 500
+        
 
 @app.route("/tippen", methods=["GET", "POST"])
 @login_required
 def tippen():
-    with get_db_session() as db_session:
-        # Fetch all matches
-        matches = db_session.query(Match).all()
+    try:
+        with get_db_session() as db_session:
+            # Fetch all matches
+            matches = db_session.query(Match).all()
 
-        # Filter valid matches for predictions
-        valid_matches = get_valid_matches(matches)
+            # Filter valid matches for predictions
+            valid_matches = get_valid_matches(matches)
 
-        # Determine matchday_to_display based on session or default to closest matchday
-        if request.method == "GET":
-            matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
-            session['matchday_to_display'] = matchday_to_display
-        else:
-            matchday_to_display = session.get('matchday_to_display')
+            # Determine matchday_to_display based on session or default to closest matchday
+            if request.method == "GET":
+                matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
+                session['matchday_to_display'] = matchday_to_display
+            else:
+                matchday_to_display = session.get('matchday_to_display')
 
-        # Filter matches by matchday parameter or default to closest matchday
-        filtered_matches = [match for match in matches if match.matchday == matchday_to_display]
+            # Filter matches by matchday parameter or default to closest matchday
+            filtered_matches = [match for match in matches if match.matchday == matchday_to_display]
 
-        # Group matches by date
-        filtered_matches_by_date = group_matches_by_date(filtered_matches)
+            # Group matches by date
+            filtered_matches_by_date = group_matches_by_date(filtered_matches)
+            
+            # Get list of matchdays and formatted matchdays for display
+            matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
+            matchdays, matchdays_formatted = zip(*matchdays_data)
+
+            # Determine next and previous matchdays
+            current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
+            next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
+            prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
+
+            if request.method == "POST":
+                process_predictions(valid_matches, session, db_session, request)
+
+            # Fetch all predictions for the current user
+            predictions = db_session.query(Prediction).filter_by(user_id=session["user_id"]).all()
+
+            # Get time of last match update
+            last_update = db_session.query(func.max(Match.lastUpdateDateTime)).scalar()
+
+            # Format last update time for display
+            if last_update:
+                last_update = convert_iso_datetime_to_human_readable(last_update)
+
+            return render_template('tippen.html', matches=filtered_matches, matchdays=matchdays, matchdays_formatted=matchdays_formatted,
+                                next_matchday=next_matchday, prev_matchday=prev_matchday, last_update=last_update,
+                                predictions=predictions, valid_matches=valid_matches, matches_by_date=filtered_matches_by_date)
         
-        # Get list of matchdays and formatted matchdays for display
-        matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
-        matchdays, matchdays_formatted = zip(*matchdays_data)
-
-        # Determine next and previous matchdays
-        current_index = matchdays.index(matchday_to_display) if matchday_to_display in matchdays else 0
-        next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
-        prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
-
-        if request.method == "POST":
-            process_predictions(valid_matches, session, db_session, request)
-
-        # Fetch all predictions for the current user
-        predictions = db_session.query(Prediction).filter_by(user_id=session["user_id"]).all()
-
-        # Get time of last match update
-        last_update = db_session.query(func.max(Match.lastUpdateDateTime)).scalar()
-
-        # Format last update time for display
-        if last_update:
-            last_update = convert_iso_datetime_to_human_readable(last_update)
-
-        return render_template('tippen.html', matches=filtered_matches, matchdays=matchdays, matchdays_formatted=matchdays_formatted,
-                               next_matchday=next_matchday, prev_matchday=prev_matchday, last_update=last_update,
-                               predictions=predictions, valid_matches=valid_matches, matches_by_date=filtered_matches_by_date)
+    except OperationalError as e:
+        app.logger.error(f"Database connection error: {e}")
+        return "Database connection error, please try again later.", 500
+    
 
 @app.route("/gruppen")
 @login_required
 def gruppen():
-    db_session = get_db_session()
     try:
-        table_data = get_league_table(db_session)
-        groups = {}
+        with get_db_session() as db_session:
+            table_data = get_league_table(db_session)
+            groups = {}
 
-        for team in table_data:
-            if team.teamGroupName not in groups:
-                groups[team.teamGroupName] = []
+            for team in table_data:
+                if team.teamGroupName not in groups:
+                    groups[team.teamGroupName] = []
 
-            groups[team.teamGroupName].append(team)
+                groups[team.teamGroupName].append(team)
 
-        try:
-            del groups["None"]  # To remove the placeholder team
-        except KeyError:
-            pass
+            try:
+                del groups["None"]  # To remove the placeholder team
+            except KeyError:
+                pass
 
-        groups = dict(sorted(groups.items()))
+            groups = dict(sorted(groups.items()))
 
-        last_update = table_data[0].lastUpdateTime
-        if last_update:
-            last_update = convert_iso_datetime_to_human_readable(last_update)
-        else:
-            last_update = None
+            last_update = table_data[0].lastUpdateTime
+            if last_update:
+                last_update = convert_iso_datetime_to_human_readable(last_update)
+            else:
+                last_update = None
 
-        return render_template("gruppen.html", groups=groups, table_data=table_data, last_update=last_update)
+            return render_template("gruppen.html", groups=groups, table_data=table_data, last_update=last_update)
     except OperationalError as e:
-        # Handle the exception and retry if needed
         app.logger.error(f"Database connection error: {e}")
-        # Optionally, you can retry the connection here
         return "Database connection error, please try again later.", 500
-    finally:
-        db_session.close()  # Ensure the session is closed
+
 
 @app.route("/regeln")
 def regeln():
     return render_template("regeln.html")
 
+
 @app.route("/")
 @login_required
 def index():
-    with get_db_session() as db_session:
-        return render_template("index.html", insights=get_insights(db_session))
+    try:
+        with get_db_session() as db_session:
+            return render_template("index.html", insights=get_insights(db_session))
+        
+    except OperationalError as e:
+        app.logger.error(f"Database connection error: {e}")
+        return "Database connection error, please try again later.", 500
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -213,33 +227,6 @@ def login():
 
                 # Remember which user has logged in
                 session["user_id"] = user.id
-                
-                # Update league table and match data if needed
-                try:
-                    print("Is update needed for league table?")
-                    if is_update_needed_league_table(db_session):
-                        print("/tYes. Updating league table...")
-                        update_league_table(db_session)
-                        print("/tLeague table update finished.")
-                    
-                    else:
-                        print("No update needed.")
-
-                    print("Is update needed for matches?")
-                    if is_update_needed_matches(db_session):
-                        print("\tYes. Updating matches database...")
-                        update_matches_db(db_session)
-
-                        # Update user scores
-                        print("\tUpdating user scores...")
-                        update_user_scores(db_session)
-                        print("\tUser scores update finished.")
-                    
-                    else:
-                        print("\tNo update needed.")
-
-                except Exception as e:
-                    print(f"Update failed: {e}")
 
                 # Redirect user to home page
                 return redirect("/")
@@ -249,13 +236,44 @@ def login():
                 return render_template("login.html")
             
     except OperationalError as e:
-    # Handle the exception and retry if needed
         app.logger.error(f"Database connection error: {e}")
-    # Optionally, you can retry the connection here
         return "Database connection error, please try again later.", 500
-    finally:
-        db_session.close()  # Ensure the session is closed
     
+
+@app.before_request
+def before_request():
+    """Update league table and match data if needed before each request"""
+    try:
+        with get_db_session() as db_session:
+            try:
+                print("Is update needed for league table?")
+                if is_update_needed_league_table(db_session):
+                    print("\tYes. Updating league table...")
+                    update_league_table(db_session)
+                    print("\tLeague table update finished.")
+                
+                else:
+                    print("No update needed.")
+
+                print("Is update needed for matches?")
+                if is_update_needed_matches(db_session):
+                    print("\tYes. Updating matches database...")
+                    update_matches_db(db_session)
+
+                    # Update user scores
+                    print("\tUpdating user scores...")
+                    update_user_scores(db_session)
+                    print("\tUser scores update finished.")
+                
+                else:
+                    print("\tNo update needed.")
+
+            except Exception as e:
+                app.logger.error(f"Update failed: {e}")
+
+    except OperationalError as e:
+        app.logger.error(f"Database connection error during update: {e}")
+
 
 @app.route("/logout")
 def logout():
@@ -273,41 +291,46 @@ def logout():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    with get_db_session() as db_session:
-        if request.method == "POST":
-            username = request.form.get("username")
-            password = request.form.get("password")
-            password_repetition = request.form.get("confirmation")
+    try:
+        with get_db_session() as db_session:
+            if request.method == "POST":
+                username = request.form.get("username")
+                password = request.form.get("password")
+                password_repetition = request.form.get("confirmation")
 
-            if not username:
-                flash("Kein Benutzername angegeben", 'error')
-                return redirect("/register")
+                if not username:
+                    flash("Kein Benutzername angegeben", 'error')
+                    return redirect("/register")
 
-            # Check if username already exists
-            existing_user = db_session.query(User).filter_by(username=username).first()
-            if existing_user:
-                flash("Benutzername bereits vergeben", 'error')
-                return redirect("/register")
+                # Check if username already exists
+                existing_user = db_session.query(User).filter_by(username=username).first()
+                if existing_user:
+                    flash("Benutzername bereits vergeben", 'error')
+                    return redirect("/register")
 
-            # Check if passwords are entered and if they match
-            if not password or not password_repetition or password != password_repetition:
-                flash("Passwörter fehlen oder stimmen nicht überein", 'error')
-                return redirect("/register")
+                # Check if passwords are entered and if they match
+                if not password or not password_repetition or password != password_repetition:
+                    flash("Passwörter fehlen oder stimmen nicht überein", 'error')
+                    return redirect("/register")
 
-            # Hash the password
-            hashed_pw = generate_password_hash(password)
+                # Hash the password
+                hashed_pw = generate_password_hash(password)
 
-            # Create a new User object
-            new_user = User(username=username, hash=hashed_pw)
+                # Create a new User object
+                new_user = User(username=username, hash=hashed_pw)
 
-            # Add new user to session and commit to database
-            db_session.add(new_user)
-            db_session.commit()
+                # Add new user to session and commit to database
+                db_session.add(new_user)
+                db_session.commit()
 
-            # Show success message
-            flash("Erfolgreich registriert!", 'success')
+                # Show success message
+                flash("Erfolgreich registriert!", 'success')
 
-            return redirect("/")
+                return redirect("/")
 
-        else:
-            return render_template("register.html")
+            else:
+                return render_template("register.html")
+            
+    except OperationalError as e:
+        app.logger.error(f"Database connection error: {e}")
+        return "Database connection error, please try again later.", 500
