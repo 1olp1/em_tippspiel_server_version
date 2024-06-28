@@ -1,8 +1,9 @@
 from flask import flash, redirect, render_template, request, session
-from sqlalchemy import func, desc, asc
+from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
+from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, get_rangliste_data, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, get_current_datetime_as_object
+from helpers import login_required, get_league_table, get_valid_matches, update_matches_db, update_league_table, is_update_needed_matches, is_update_needed_league_table, update_user_scores, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -23,7 +24,8 @@ def rangliste():
 
         # Determine matchday_to_display based on session or default to closest matchday
         if request.method == "GET":
-            matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
+            closest_in_time_match = find_closest_in_time_match_db(db_session)
+            matchday_to_display = int(request.args.get('matchday', closest_in_time_match.matchday))
             session['matchday_to_display'] = matchday_to_display
         else:
             matchday_to_display = session.get('matchday_to_display')
@@ -67,9 +69,12 @@ def rangliste():
 
         max_points = max(user_points_matchday.values(), default=0)
         top_users = [user_id for user_id, points in user_points_matchday.items() if points == max_points and max_points != 0]
+        match_ids = [match.id for match in filtered_matches]
+        index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
+        no_filtered_matches = len(match_ids)
 
 
-        return render_template("rangliste.html",
+        return render_template("rangliste2.html",
                                matches=filtered_matches,
                                prev_matchday=prev_matchday,
                                next_matchday=next_matchday,
@@ -79,7 +84,9 @@ def rangliste():
                                user_id=session["user_id"],
                                last_update=last_update,
                                top_users=top_users,
-                               user_points_matchday=user_points_matchday
+                               user_points_matchday=user_points_matchday,
+                               index_of_closest_in_time_match=index_of_closest_in_time_match,
+                               no_matches=no_filtered_matches
                                )
     
 
@@ -117,7 +124,7 @@ def tippen():
 
         if request.method == "POST":
             process_predictions(valid_matches, session, db_session, request)
-            
+
         # Fetch all predictions for the current user
         predictions = db_session.query(Prediction).filter_by(user_id=session["user_id"]).all()
 
@@ -132,11 +139,11 @@ def tippen():
                                next_matchday=next_matchday, prev_matchday=prev_matchday, last_update=last_update,
                                predictions=predictions, valid_matches=valid_matches, matches_by_date=filtered_matches_by_date)
 
-
 @app.route("/gruppen")
 @login_required
 def gruppen():
-    with get_db_session() as db_session:
+    db_session = get_db_session()
+    try:
         table_data = get_league_table(db_session)
         groups = {}
 
@@ -147,7 +154,7 @@ def gruppen():
             groups[team.teamGroupName].append(team)
 
         try:
-            del groups["None"] # To remove the placeholder team
+            del groups["None"]  # To remove the placeholder team
         except KeyError:
             pass
 
@@ -160,7 +167,13 @@ def gruppen():
             last_update = None
 
         return render_template("gruppen.html", groups=groups, table_data=table_data, last_update=last_update)
-
+    except OperationalError as e:
+        # Handle the exception and retry if needed
+        app.logger.error(f"Database connection error: {e}")
+        # Optionally, you can retry the connection here
+        return "Database connection error, please try again later.", 500
+    finally:
+        db_session.close()  # Ensure the session is closed
 
 @app.route("/regeln")
 def regeln():
@@ -175,64 +188,73 @@ def index():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Log user in"""
-    with get_db_session() as db_session:
-        # User reached route via POST (as by submitting a form via POST)
-        if request.method == "POST":
-            username = request.form.get("username")
-            password = request.form.get("password")
+    try:
+        with get_db_session() as db_session:
+            # User reached route via POST (as by submitting a form via POST)
+            if request.method == "POST":
+                username = request.form.get("username")
+                password = request.form.get("password")
 
-            # Ensure username and password were submitted
-            if not username or not password:
-                flash("Benutzername/Passwort fehlt", "error")
-                return redirect("/login")
-            
-            # Forget any user_id
-            session.clear()
-
-            # Query database for username
-            user = db_session.query(User).filter_by(username=username).first()
-
-            # Check if user exists and password is correct
-            if not user or not check_password_hash(user.hash, password):
-                flash("Ungültiger Benutzername und/oder Passwort", 'error')
-                return redirect("/login")
-
-            # Remember which user has logged in
-            session["user_id"] = user.id
-            
-            # Update league table and match data if needed
-            try:
-                print("Is update needed for league table?")
-                if is_update_needed_league_table(db_session):
-                    print("/tYes. Updating league table...")
-                    update_league_table(db_session)
-                    print("/tLeague table update finished.")
+                # Ensure username and password were submitted
+                if not username or not password:
+                    flash("Benutzername/Passwort fehlt", "error")
+                    return redirect("/login")
                 
-                else:
-                    print("No update needed.")
+                # Forget any user_id
+                session.clear()
 
-                print("Is update needed for matches?")
-                if is_update_needed_matches(db_session):
-                    print("\tYes. Updating matches database...")
-                    update_matches_db(db_session)
+                # Query database for username
+                user = db_session.query(User).filter_by(username=username).first()
 
-                    # Update user scores
-                    print("\tUpdating user scores...")
-                    update_user_scores(db_session)
-                    print("\tUser scores update finished.")
+                # Check if user exists and password is correct
+                if not user or not check_password_hash(user.hash, password):
+                    flash("Ungültiger Benutzername und/oder Passwort", 'error')
+                    return redirect("/login")
+
+                # Remember which user has logged in
+                session["user_id"] = user.id
                 
-                else:
-                    print("\tNo update needed.")
+                # Update league table and match data if needed
+                try:
+                    print("Is update needed for league table?")
+                    if is_update_needed_league_table(db_session):
+                        print("/tYes. Updating league table...")
+                        update_league_table(db_session)
+                        print("/tLeague table update finished.")
+                    
+                    else:
+                        print("No update needed.")
 
-            except Exception as e:
-                print(f"Update failed: {e}")
+                    print("Is update needed for matches?")
+                    if is_update_needed_matches(db_session):
+                        print("\tYes. Updating matches database...")
+                        update_matches_db(db_session)
 
-            # Redirect user to home page
-            return redirect("/")
+                        # Update user scores
+                        print("\tUpdating user scores...")
+                        update_user_scores(db_session)
+                        print("\tUser scores update finished.")
+                    
+                    else:
+                        print("\tNo update needed.")
 
-        # User reached route via GET (as by clicking a link or via redirect)
-        else:
-            return render_template("login.html")
+                except Exception as e:
+                    print(f"Update failed: {e}")
+
+                # Redirect user to home page
+                return redirect("/")
+
+            # User reached route via GET (as by clicking a link or via redirect)
+            else:
+                return render_template("login.html")
+            
+    except OperationalError as e:
+    # Handle the exception and retry if needed
+        app.logger.error(f"Database connection error: {e}")
+    # Optionally, you can retry the connection here
+        return "Database connection error, please try again later.", 500
+    finally:
+        db_session.close()  # Ensure the session is closed
     
 
 @app.route("/logout")

@@ -45,21 +45,21 @@
                 <tr>
                     <th colspan="2" class="text-left"></th>
                     {% for match in matches %}
-                        <td> {{ match.team1.shortName }} </td>
+                        <td class="match-column"> {{ match.team1.shortName }} </td>
                     {% endfor %}
                     <td colspan="4"></td>
                 </tr>
                 <tr>
                     <th colspan="2" class="text-left"></th>
                     {% for match in matches %}
-                        <td> {{ match.team2.shortName }}</td>
+                        <td class="match-column"> {{ match.team2.shortName }}</td>
                     {% endfor %}
                     <td colspan="4"></td>
                 </tr>
                 <tr class="bottom-border">
                     <th colspan="2" class="text-left"></th>
                     {% for match in matches %}
-                        <td>
+                        <td class="match-column">
                             {% if match.team1_score is not none %}
                                 {{ match.team1_score }}:{{ match.team2_score }}
                             {% else %}
@@ -78,7 +78,7 @@
                         <td>{{ user.username }}</td>
                         {% for match in matches %}
                             {% set prediction = user.predictions|selectattr("match_id", "equalto", match.id)|first %}
-                            <td>
+                            <td class="match-column">
                                 {% if prediction %}
                                     {% if match.matchIsFinished or match.is_underway or user.id == user_id %}
                                         <span class="{% if prediction.points == 0 %} prediction-wrong {% endif %}">
@@ -96,22 +96,75 @@
                             </td>
                         {% endfor %}
                         {% if user.id in top_users %}
-                            <td style="color: rgb(173, 11, 11);
-">
+                            <td style="color: rgb(22, 104, 255);">
                         {% else %}
                             <td>
                         {% endif %}                 
                         {{ user_points_matchday[user.id] }}
                             </td>
                         <td> {{ user.total_points }}</td>
-                        </tr>
+                    </tr>
                 {% endfor %}
             </tbody>
+
         </table>
     </div>
+    <tr>
+        <div class="pagination-controls">
+            <button id="prev-btn" class="btn btn-primary" disabled>Previous</button>
+            <button id="next-btn" class="btn btn-primary">Next</button>
+        </div>
+
+
     <div class="last-update" style="display: flex; justify-content: space-between;">
         <p>Stand: {{ last_update }}</p>
     </div>
 </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const columnsPerPage = 2;  // Number of columns to show per page
+        const matchColumns = document.querySelectorAll('.match-column');
+        let currentPage = 0;
+
+        function updatePagination() {
+            // Hide all columns
+            matchColumns.forEach(col => {
+                col.classList.remove('visible');
+            });
+
+            // Calculate which columns to show
+            const start = currentPage * columnsPerPage;
+            const end = start + columnsPerPage;
+
+            // Show the calculated columns
+            for (let i = start; i < end && i < matchColumns.length; i++) {
+                matchColumns[i].classList.add('visible');
+            }
+
+            // Disable/enable pagination buttons
+            document.getElementById('prev-btn').disabled = currentPage === 0;
+            document.getElementById('next-btn').disabled = end >= matchColumns.length;
+        }
+
+        document.getElementById('prev-btn').addEventListener('click', function() {
+            if (currentPage > 0) {
+                currentPage--;
+                updatePagination();
+            }
+        });
+
+        document.getElementById('next-btn').addEventListener('click', function() {
+            const maxPage = Math.ceil(matchColumns.length / columnsPerPage) - 1;
+            if (currentPage < maxPage) {
+                currentPage++;
+                updatePagination();
+            }
+        });
+
+        updatePagination();  // Initialize pagination on page load
+    });
+</script>
+
 
 {% endblock %}

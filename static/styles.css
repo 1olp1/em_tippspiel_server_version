@@ -81,7 +81,7 @@ nav .navbar-brand .blue {
 
 /* For colouring the points if the prediction was right */
 .sub-correct {
-    color:rgb(173, 11, 11);
+    color:rgb(22, 104, 255);
 }
 
 
@@ -208,7 +208,28 @@ nav .navbar-brand .blue {
     }
 }
 
-
 .navbar-toggler-icon {
     background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(22, 104, 255, 1)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
   }
+
+  /* Hide match columns by default */
+.match-column {
+    display: none;
+}
+
+/* Show the first two columns initially */
+.match-column.visible {
+    display: table-cell;
+}
+
+/* Hide the button by default */
+.navigationButton {
+    display: none;
+}
+
+/* Show the button when screen width is below 768px */
+@media (max-width: 768px) {
+    .navigationButton {
+        display: inline-block; /* or display: block; */
+    }
+}

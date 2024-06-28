@@ -691,7 +691,7 @@ def find_closest_in_time_match_db(db_session):
     
     current_matchday_data_db = db_session.query(
         Match.matchday,
-        Match.id
+        Match.id,
     ).order_by(
         func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
     ).first()           # Query by chatgpt
@@ -701,6 +701,22 @@ def find_closest_in_time_match_db(db_session):
 
 def find_closest_in_time_matchday_db(db_session):
     return find_closest_in_time_match_db(db_session).matchday
+
+
+def find_closest_in_time_match_db_matchday(db_session, matchday):
+    # Get current match from db based on which match is closest in time
+    current_datetime = datetime.now()
+    
+    current_matchday_data_db = db_session.query(
+        Match.matchday,
+        Match.id,
+    ).filter(
+        Match.matchday == matchday
+    ).order_by(
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
+    ).first()           # Query by chatgpt
+
+    return current_matchday_data_db
 
 
 
