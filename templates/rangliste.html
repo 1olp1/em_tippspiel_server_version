@@ -6,6 +6,7 @@
 
 {% block main %}
 
+
 <div class="pagination">
     <ul class="pagination justify-content-center">
         {% if prev_matchday %}
@@ -37,29 +38,34 @@
         {% endif %}
     </ul>
 </div>
-
 <div class="text-center">
     <div class="table-responsive">
         <table class="table rounded-4 overflow-hidden">
-            <thead>
+            <tbody>
                 <tr>
-                    <th colspan="2" class="text-left"></th>
+                    <th></th>
+                    <td>
+                        <button id="prev-btn" type="button" class="btn btn-primary navigationButton">
+                            <i class="fa-solid fa-caret-left"></i>
+                        </button>
+                    </td>
                     {% for match in matches %}
-                        <td class="match-column"> {{ match.team1.shortName }} </td>
+                        <td name="match-column{{ loop.index }}"> 
+                            {{ match.team1.shortName }} <br>
+                            {{ match.team2.shortName }}
+                        </td>
                     {% endfor %}
-                    <td colspan="4"></td>
-                </tr>
-                <tr>
-                    <th colspan="2" class="text-left"></th>
-                    {% for match in matches %}
-                        <td class="match-column"> {{ match.team2.shortName }}</td>
-                    {% endfor %}
-                    <td colspan="4"></td>
+                    <td>
+                        <button id="next-btn" type="button" class="btn btn-primary navigationButton">
+                            <i class="fa-solid fa-caret-right"></i>
+                        </button>
+                    </td>
+                    <td colspan="3"></td>
                 </tr>
                 <tr class="bottom-border">
-                    <th colspan="2" class="text-left"></th>
+                    <td colspan="2">Tipper</td>
                     {% for match in matches %}
-                        <td class="match-column">
+                        <td name="match-column{{ loop.index }}">
                             {% if match.team1_score is not none %}
                                 {{ match.team1_score }}:{{ match.team2_score }}
                             {% else %}
@@ -70,15 +76,13 @@
                     <td>P</td>
                     <td><strong>G</strong></td>
                 </tr>
-            </thead>
-            <tbody>
                 {% for user in users %}
                     <tr class="{% if user.id == user_id %}table-primary{% endif %}">
                         <td>{{ loop.index }}</td>
                         <td>{{ user.username }}</td>
                         {% for match in matches %}
                             {% set prediction = user.predictions|selectattr("match_id", "equalto", match.id)|first %}
-                            <td class="match-column">
+                            <td name="match-column{{ loop.index }}">
                                 {% if prediction %}
                                     {% if match.matchIsFinished or match.is_underway or user.id == user_id %}
                                         <span class="{% if prediction.points == 0 %} prediction-wrong {% endif %}">
@@ -106,65 +110,106 @@
                     </tr>
                 {% endfor %}
             </tbody>
-
         </table>
     </div>
-    <tr>
-        <div class="pagination-controls">
-            <button id="prev-btn" class="btn btn-primary" disabled>Previous</button>
-            <button id="next-btn" class="btn btn-primary">Next</button>
-        </div>
-
-
     <div class="last-update" style="display: flex; justify-content: space-between;">
         <p>Stand: {{ last_update }}</p>
     </div>
 </div>
-
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const columnsPerPage = 2;  // Number of columns to show per page
-        const matchColumns = document.querySelectorAll('.match-column');
-        let currentPage = 0;
+        var column_to_display = {{ index_of_closest_in_time_match }}; // Initial value to display
+        var max_index = {{ no_matches }};
+        var no_columns_to_display = (max_index === 1) ? 1 : 2; // Adjust based on the number of matches
 
-        function updatePagination() {
-            // Hide all columns
-            matchColumns.forEach(col => {
-                col.classList.remove('visible');
+        // Select all <td> elements with name attribute starting with 'match-column'
+        var tdElements = document.querySelectorAll(`td[name^="match-column"]`);
+
+        // Navigation button elements
+        var prevBtn = document.getElementById('prev-btn');
+        var nextBtn = document.getElementById('next-btn');
+
+        // Function to update table display based on column_to_display
+        function updateTableDisplay() {
+            var startIndex = Math.max(1, column_to_display - Math.floor((no_columns_to_display - 1) / 2));
+            var endIndex = Math.min(max_index, startIndex + no_columns_to_display - 1);
+
+            // Ensure we display the correct number of columns at the end
+            if (endIndex - startIndex + 1 < no_columns_to_display) {
+                startIndex = Math.max(1, endIndex - no_columns_to_display + 1);
+            }
+
+            // Loop through all <td> elements
+            tdElements.forEach(function(td) {
+                var tdIndex = parseInt(td.getAttribute('name').replace('match-column', ''));
+                
+                // Check if tdIndex is within the calculated range
+                if (tdIndex >= startIndex && tdIndex <= endIndex) {
+                    td.style.display = 'table-cell'; // Show the <td> element
+                } else {
+                    td.style.display = 'none'; // Hide the <td> element
+                }
             });
 
-            // Calculate which columns to show
-            const start = currentPage * columnsPerPage;
-            const end = start + columnsPerPage;
-
-            // Show the calculated columns
-            for (let i = start; i < end && i < matchColumns.length; i++) {
-                matchColumns[i].classList.add('visible');
-            }
-
-            // Disable/enable pagination buttons
-            document.getElementById('prev-btn').disabled = currentPage === 0;
-            document.getElementById('next-btn').disabled = end >= matchColumns.length;
+            // Disable/enable navigation buttons based on startIndex and endIndex
+            prevBtn.disabled = (startIndex <= 1);
+            nextBtn.disabled = (endIndex >= max_index);
         }
 
-        document.getElementById('prev-btn').addEventListener('click', function() {
-            if (currentPage > 0) {
-                currentPage--;
-                updatePagination();
-            }
-        });
+        // Function to handle screen size changes
+        function handleScreenSizeChange(e) {
+            if (e.matches) {
+                // Screen is small
+                updateTableDisplay();
 
-        document.getElementById('next-btn').addEventListener('click', function() {
-            const maxPage = Math.ceil(matchColumns.length / columnsPerPage) - 1;
-            if (currentPage < maxPage) {
-                currentPage++;
-                updatePagination();
-            }
-        });
+                // Add event listeners for navigation buttons
+                prevBtn.addEventListener('click', handlePrevClick);
+                nextBtn.addEventListener('click', handleNextClick);
+            } else {
+                // Screen is large
+                // Show all columns
+                tdElements.forEach(function(td) {
+                    td.style.display = 'table-cell'; // Show all <td> elements
+                });
 
-        updatePagination();  // Initialize pagination on page load
+                // Remove event listeners for navigation buttons
+                prevBtn.removeEventListener('click', handlePrevClick);
+                nextBtn.removeEventListener('click', handleNextClick);
+            }
+        }
+
+        // Event handler for previous button click
+        function handlePrevClick() {
+            if (column_to_display > 1) {
+                column_to_display--;
+                updateTableDisplay();
+            }
+        }
+
+        // Event handler for next button click
+        function handleNextClick() {
+            if (column_to_display < max_index) {
+                column_to_display++;
+                updateTableDisplay();
+            }
+        }
+
+        // Initialize matchMedia for screen width detection
+        var mediaQuery = window.matchMedia('(max-width: 768px)');
+        mediaQuery.addListener(handleScreenSizeChange);
+
+        // Initial check for screen size
+        handleScreenSizeChange(mediaQuery);
+
+        // Initial display setup
+        if (window.matchMedia('(max-width: 768px)').matches) {
+            updateTableDisplay();
+        }
     });
 </script>
+
+
+
 
 
 {% endblock %}

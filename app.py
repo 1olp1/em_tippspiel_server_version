@@ -75,7 +75,7 @@ def rangliste():
             no_filtered_matches = len(match_ids)
 
 
-            return render_template("rangliste2.html",
+            return render_template("rangliste.html",
                                 matches=filtered_matches,
                                 prev_matchday=prev_matchday,
                                 next_matchday=next_matchday,
