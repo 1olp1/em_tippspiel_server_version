@@ -42,13 +42,9 @@ def rangliste():
             next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
             prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
 
-            # Get last update to display last update time in html
+            # Get last update time
             last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
-
-            if not last_update:
-                last_update = None
-            else:
-                last_update = convert_iso_datetime_to_human_readable(last_update)
+            last_update = convert_iso_datetime_to_human_readable(last_update) if last_update else None
 
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
@@ -59,7 +55,6 @@ def rangliste():
                 desc(User.correct_goal_diff),
                 desc(User.correct_tendency)
             ).all()
-
 
             # Fetch matches and predictions for the current matchday
             filtered_matches = db_session.query(Match).filter_by(matchday=matchday_to_display).all()
@@ -72,10 +67,10 @@ def rangliste():
 
             max_points = max(user_points_matchday.values(), default=0)
             top_users = [user_id for user_id, points in user_points_matchday.items() if points == max_points and max_points != 0]
+
             match_ids = [match.id for match in filtered_matches]
             index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
             no_filtered_matches = len(match_ids)
-
 
             return render_template("rangliste.html",
                                 matches=filtered_matches,
