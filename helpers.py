@@ -511,7 +511,7 @@ def update_matches_db(db_session):
             last_update_time_openliga = normalize_datetime(last_update_time_openliga)
 
             if last_update_time_openliga > last_update_time_db:
-                update_match_in_db(matchdata_openliga, db_session)
+                update_match_in_db(matchdata_openliga, unfinished_match, db_session)
         else:
             # Update if last update time is missing or inconsistent
             update_match_in_db(matchdata_openliga, unfinished_match, db_session)
@@ -531,8 +531,8 @@ def update_match_in_db(matchdata_API, match_db, db_session):
 
     # If teams were not yet determined, update team_id's    
     if match_db.team1_id == dummy_team_id or match_db.team2_id == dummy_team_id:
-        update_data[Match.team1_id] = matchdata_API["team1"]["teamID"]
-        update_data[Match.team2_id] = matchdata_API["team2"]["teamID"]
+        update_data[Match.team1_id] = matchdata_API["team1"]["teamId"]
+        update_data[Match.team2_id] = matchdata_API["team2"]["teamId"]
 
     # Conditionally update team scores based on match finished status
     if matchFinished:
