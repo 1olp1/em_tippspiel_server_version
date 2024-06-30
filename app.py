@@ -46,6 +46,11 @@ def rangliste():
             last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
             last_update = convert_iso_datetime_to_human_readable(last_update) if last_update else None
 
+            print(f"closest match is {closest_in_time_match.id} and is underway? {closest_in_time_match.is_underway}")
+            if closest_in_time_match.is_underway:
+                update_match_in_db(get_matchdata_openliga(closest_in_time_match.id), closest_in_time_match, db_session)
+                update_user_scores(db_session)
+
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
                 joinedload(User.predictions)  # Ensures predictions are loaded with users
@@ -72,10 +77,7 @@ def rangliste():
             index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
             no_filtered_matches = len(match_ids)
             
-            print(f"closest match is {closest_in_time_match.id} and is underway? {closest_in_time_match.is_underway}")
-            if closest_in_time_match.is_underway:
-                update_match_in_db(get_matchdata_openliga(closest_in_time_match.id), closest_in_time_match, db_session)
-                update_user_scores(db_session)
+            
 
             return render_template("rangliste.html",
                                 matches=filtered_matches,
