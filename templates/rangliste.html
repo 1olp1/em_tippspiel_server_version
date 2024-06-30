@@ -68,14 +68,18 @@
                 <tr class="bottom-border">
                     <td colspan="2">Tipper</td>
                     {% for match in matches %}
-                        <td name="match-column{{ loop.index }}">
-                            {% if match.team1_score is not none %}
-                                {{ match.team1_score }}:{{ match.team2_score }}
+                    <td name="match-column{{ loop.index }}">
+                        {% if match.team1_score is not none %}
+                            {% if match.is_underway %}
+                                <span style="color: red;">{{ match.team1_score }}:{{ match.team2_score }}</span>
                             {% else %}
-                                -:-
+                                {{ match.team1_score }}:{{ match.team2_score }}
                             {% endif %}
-                        </td>
-                    {% endfor %}
+                        {% else %}
+                            -:-
+                        {% endif %}
+                    </td>
+                {% endfor %}
                     <td>P</td>
                     <td><strong>G</strong></td>
                 </tr>
@@ -91,7 +95,7 @@
                                         <span class="{% if prediction.points == 0 and match.predictions_evaluated == 1 %} prediction-wrong {% endif %}">
                                             {{ prediction.team1_score }}:{{ prediction.team2_score }}
                                         </span> 
-                                        {% if match.predictions_evaluated == 1 and prediction.points > 0%}
+                                        {% if prediction.points > 0%}
                                             <sub class="sub-correct">{{ prediction.points }}</sub>
                                         {% endif %}
                                     {% else %}

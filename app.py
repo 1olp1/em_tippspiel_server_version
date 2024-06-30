@@ -3,7 +3,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday, update_db
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -71,6 +71,11 @@ def rangliste():
             match_ids = [match.id for match in filtered_matches]
             index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
             no_filtered_matches = len(match_ids)
+            
+            print(f"closest match is {closest_in_time_match.id} and is underway? {closest_in_time_match.is_underway}")
+            if closest_in_time_match.is_underway:
+                update_match_in_db(get_matchdata_openliga(closest_in_time_match.id), closest_in_time_match, db_session)
+                update_user_scores(db_session)
 
             return render_template("rangliste.html",
                                 matches=filtered_matches,

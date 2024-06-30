@@ -6,7 +6,7 @@ import requests
 import uuid
 import os
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timedelta
 from models import User, Match, Team, Prediction
 from collections import defaultdict
 from config import app
@@ -169,7 +169,7 @@ def update_user_scores(db_session):
     matches = get_matches_db(db_session)
     
     for match in matches:
-        if match.matchIsFinished == 1 and match.predictions_evaluated == 0:
+        if (match.matchIsFinished == 1 or match.is_underway) and match.predictions_evaluated == 0:
             # Calculate match outcome parameters
             team1_score = match.team1_score
             team2_score = match.team2_score
@@ -190,7 +190,8 @@ def update_user_scores(db_session):
                     prediction.points = 0
 
             # Update match evaluation status
-            match.predictions_evaluated = 1
+            if match.matchIsFinished == 1:
+                match.predictions_evaluated = 1
             match.evaluation_Date = get_current_datetime_as_object()
 
     # Update total points in the users table (Query with help from chatGPT)
@@ -541,6 +542,10 @@ def update_match_in_db(matchdata_API, match_db, db_session):
         update_data[Match.team1_score] = matchdata_API["matchResults"][1]["pointsTeam1"]
         update_data[Match.team2_score] = matchdata_API["matchResults"][1]["pointsTeam2"]
 
+    if match_db.is_underway:
+        update_data[Match.team1_score] = matchdata_API["matchResults"][-1]["pointsTeam1"]
+        update_data[Match.team2_score] = matchdata_API["matchResults"][-1]["pointsTeam2"]
+    
     db_session.query(Match).filter_by(id=matchdata_API["matchID"]).update(update_data)
 
     # Commit the session to persist data
@@ -658,19 +663,16 @@ def normalize_datetime(input_dt):
 
 
 def find_closest_in_time_match_db(db_session):
-    # Get current match from db based on which match is closest in time
-    current_datetime = datetime.now()
-    
-    current_matchday_data_db = db_session.query(
-        Match
-    ).options(
+    # Query to find the match closest in time, adding 140 minutes to matchDateTime
+    # Query with help from chatgpt
+    query = db_session.query(Match).options(
         joinedload(Match.team1),
         joinedload(Match.team2)
     ).order_by(
-        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
-    ).first()           # Query by chatgpt
+        func.abs(func.timestampdiff(text('SECOND'), func.timestampadd(text('MINUTE'), 140, Match.matchDateTime), func.now()))
+    ).first()
 
-    return current_matchday_data_db
+    return query
 
 
 def find_closest_in_time_matchday_db(db_session):
@@ -680,6 +682,8 @@ def find_closest_in_time_matchday_db(db_session):
 def find_closest_in_time_match_db_matchday(db_session, matchday):
     # Get current match from db based on which match is closest in time
     current_datetime = datetime.now()
+    # Add 140 minutes to current_datetime
+    target_datetime = current_datetime + timedelta(minutes=140)
     
     current_matchday_data_db = db_session.query(
         Match.matchday,
@@ -687,7 +691,7 @@ def find_closest_in_time_match_db_matchday(db_session, matchday):
     ).filter(
         Match.matchday == matchday
     ).order_by(
-        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_datetime))
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, target_datetime))
     ).first()           # Query by chatgpt
 
     return current_matchday_data_db
