@@ -92,7 +92,7 @@
                             <td name="match-column{{ loop.index }}">
                                 {% if prediction %}
                                     {% if match.matchIsFinished or match.is_underway or user.id == user_id %}
-                                        <span class="{% if prediction.points == 0 and match.predictions_evaluated == 1 %} prediction-wrong {% endif %}">
+                                        <span class="{% if prediction.points == 0 %} prediction-wrong {% endif %}">
                                             {{ prediction.team1_score }}:{{ prediction.team2_score }}
                                         </span> 
                                         {% if prediction.points > 0%}
