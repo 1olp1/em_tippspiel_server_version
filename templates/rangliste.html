@@ -51,10 +51,13 @@
                     </td>
                     {% for match in matches %}
                         <td name="match-column{{ loop.index }}"> 
+                            {{ match.matchDateTime.strftime('%d.%m.') }} <br>
+                            {{ match.time }} <br>
                             {{ match.team1.shortName }} <br>
                             {{ match.team2.shortName }}
                         </td>
                     {% endfor %}
+ 
                     <td>
                         <button id="next-btn" type="button" class="btn btn-primary navigationButton">
                             <i class="fa-solid fa-caret-right"></i>
@@ -116,42 +119,33 @@
         <p>Stand: {{ last_update }}</p>
     </div>
 </div>
+
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        var column_to_display = {{ index_of_closest_in_time_match }}; // Initial value to display
+        // Cache DOM elements
+        var tdElements = Array.from(document.querySelectorAll('td[name^="match-column"]'));
+        var prevBtn = document.getElementById('prev-btn');
+        var nextBtn = document.getElementById('next-btn');
+        
+        var column_to_display = {{ index_of_closest_in_time_match }}; // Use the initial value or default to 4
         var max_index = {{ no_matches }};
         var no_columns_to_display = (max_index === 1) ? 1 : 2; // Adjust based on the number of matches
 
-        // Select all <td> elements with name attribute starting with 'match-column'
-        var tdElements = document.querySelectorAll(`td[name^="match-column"]`);
-
-        // Navigation button elements
-        var prevBtn = document.getElementById('prev-btn');
-        var nextBtn = document.getElementById('next-btn');
-
         // Function to update table display based on column_to_display
         function updateTableDisplay() {
-            var startIndex = Math.max(1, column_to_display - Math.floor((no_columns_to_display - 1) / 2));
-            var endIndex = Math.min(max_index, startIndex + no_columns_to_display - 1);
+            if (column_to_display === 1) column_to_display = 2;
 
-            // Ensure we display the correct number of columns at the end
-            if (endIndex - startIndex + 1 < no_columns_to_display) {
-                startIndex = Math.max(1, endIndex - no_columns_to_display + 1);
-            }
+            var startIndex = column_to_display - 1;
+            var endIndex = column_to_display;
 
-            // Loop through all <td> elements
-            tdElements.forEach(function(td) {
-                var tdIndex = parseInt(td.getAttribute('name').replace('match-column', ''));
-                
-                // Check if tdIndex is within the calculated range
-                if (tdIndex >= startIndex && tdIndex <= endIndex) {
-                    td.style.display = 'table-cell'; // Show the <td> element
-                } else {
-                    td.style.display = 'none'; // Hide the <td> element
-                }
+            console.log(startIndex);
+            console.log(endIndex);
+
+            tdElements.forEach(td => {
+                var tdIndex = parseInt(td.getAttribute('name').replace('match-column', ''), 10);
+                td.style.display = (tdIndex >= startIndex && tdIndex <= endIndex) ? 'table-cell' : 'none';
             });
 
-            // Disable/enable navigation buttons based on startIndex and endIndex
             prevBtn.disabled = (startIndex <= 1);
             nextBtn.disabled = (endIndex >= max_index);
         }
@@ -159,20 +153,11 @@
         // Function to handle screen size changes
         function handleScreenSizeChange(e) {
             if (e.matches) {
-                // Screen is small
                 updateTableDisplay();
-
-                // Add event listeners for navigation buttons
                 prevBtn.addEventListener('click', handlePrevClick);
                 nextBtn.addEventListener('click', handleNextClick);
             } else {
-                // Screen is large
-                // Show all columns
-                tdElements.forEach(function(td) {
-                    td.style.display = 'table-cell'; // Show all <td> elements
-                });
-
-                // Remove event listeners for navigation buttons
+                tdElements.forEach(td => td.style.display = 'table-cell');
                 prevBtn.removeEventListener('click', handlePrevClick);
                 nextBtn.removeEventListener('click', handleNextClick);
             }
@@ -200,11 +185,6 @@
 
         // Initial check for screen size
         handleScreenSizeChange(mediaQuery);
-
-        // Initial display setup
-        if (window.matchMedia('(max-width: 768px)').matches) {
-            updateTableDisplay();
-        }
     });
 </script>
 

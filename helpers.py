@@ -15,6 +15,9 @@ league = "em"      # bl1 for 1. Bundesliga
 league_id = 4708
 season = "2024"     # 2023 for 2023/2024 season
 
+# Tournament info
+games_group_stage = 3
+
 # urls for openliga queries
 url_matchdata = f"https://api.openligadb.de/getmatchdata/{league}/{season}"
 url_table = f"https://api.openligadb.de/getbltable/{league}/{season}"
@@ -77,7 +80,7 @@ def get_league_table(db_session):
 def update_db(db_session):
     try:
         print("\nIs update needed for league table?")
-        if is_update_needed_league_table(db_session):
+        if get_current_matchday_openliga() <= games_group_stage and is_update_needed_league_table(db_session):
             print("\tYes. Updating league table...")
             update_league_table(db_session)
             print("\tLeague table update finished.")
@@ -226,7 +229,6 @@ def process_predictions(valid_matches, session, db_session, request):
         # Retrieve user input for team scores
         team1_score = request.form.get(f'team1Score_{match_id}')
         team2_score = request.form.get(f'team2Score_{match_id}')
-        print(f'Match ID: {match_id}, Team 1 Score: {team1_score}, Team 2 Score: {team2_score}')
 
         # Retrieve or create prediction entry
         prediction = db_session.query(Prediction).filter_by(user_id=session["user_id"], match_id=match_id).first()
@@ -586,43 +588,6 @@ def resize_image(image_path, max_size=(100, 100)):
 
             # Save the resized image to the output folder
             f.save(image_path)
-
-
-def get_rangliste_data(db_session, matchday):
-    # Query users and their predictions
-    users_predictions = (
-        db_session.query(User, Prediction)
-        .outerjoin(Prediction, User.id == Prediction.user_id)
-        .filter_by(matchday=matchday)
-        .order_by(desc(User.total_points), desc(User.correct_result), desc(User.correct_goal_diff), desc(User.correct_tendency), asc(Prediction.matchday))
-        .all()
-    )
-
-    # Process the query results
-    user_predictions = {}
-    for user, prediction in users_predictions:
-        if user.id not in user_predictions:
-            user_predictions[user.id] = {
-                'username': user.username,
-                'id': user.id,
-                'total_points': user.total_points,
-                'correct_result': user.correct_result,
-                'correct_goal_diff': user.correct_goal_diff,
-                'correct_tendency': user.correct_tendency,
-                'predictions': []
-            }
-
-        if prediction:
-            user_predictions[user.id]['predictions'].append({
-                'matchday': prediction.matchday,
-                'match_id': prediction.match_id,
-                'team1_score': prediction.team1_score,
-                'team2_score': prediction.team2_score,
-                'points': prediction.points
-            })
-
-    user_predictions_list = list(user_predictions.values())
-    return user_predictions_list
 
 
 def add_up_decimals_to_6(date_string):
