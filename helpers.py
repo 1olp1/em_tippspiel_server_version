@@ -95,7 +95,6 @@ def update_db(db_session):
         print("\nIs update needed?")
         if is_update_needed_matches(db_session):
             print("\tYes. Updating matches database...")
-            update_matches_db(db_session)
 
             # Update user scores
             print("\tUpdating user scores...")
@@ -348,6 +347,58 @@ def insert_matches_to_db(db_session):
     db_session.commit()
 
 
+def update_existing_matches_to_db(db_session):
+    # Query openliga API with link from above
+    matchdata = get_openliga_json(url_matchdata)
+
+    if matchdata:
+        for match in matchdata:
+            match_id = match["matchID"]
+            existing_match = db_session.query(Match).filter_by(id=match_id).first()
+            if existing_match:
+                # Local variable if match is finished
+                matchFinished = match["matchIsFinished"]
+
+                existing_match.team1_id = match["team1"]["teamId"]
+                existing_match.team2_id = match["team2"]["teamId"]
+                existing_match.team1_score = match["matchResults"][1]["pointsTeam1"] if matchFinished else None
+                existing_match.team2_score = match["matchResults"][1]["pointsTeam2"] if matchFinished else None
+                existing_match.matchIsFinished = matchFinished
+                existing_match.lastUpdateDateTime = match["lastUpdateDateTime"]
+    
+    db_session.commit()
+
+def insert_or_update_matches_to_db(db_session):
+    # Query openliga API with link from above
+    matchdata = get_openliga_json(url_matchdata)
+
+    if matchdata:
+        for match in matchdata:
+            # Local variable if match is finished
+            matchFinished = match["matchIsFinished"]
+
+            team1_score = match["matchResults"][1]["pointsTeam1"] if matchFinished else None
+            team2_score = match["matchResults"][1]["pointsTeam2"] if matchFinished else None
+
+            match_entry = Match(
+                id=match["matchID"],
+                matchday=match["group"]["groupOrderID"],
+                team1_id=match["team1"]["teamId"],
+                team2_id=match["team2"]["teamId"],
+                team1_score=team1_score,
+                team2_score=team2_score,
+                matchDateTime=match["matchDateTime"],
+                matchIsFinished=matchFinished,
+                location=match["location"]["locationCity"],
+                lastUpdateDateTime=match["lastUpdateDateTime"]
+            )
+            
+            db_session.merge(match_entry)  # Use merge to insert or update
+
+    db_session.commit()
+
+
+
 def download_and_resize_logos(teams):
     # Make path for team logos if it does not already exist for the league and season
     os.makedirs(img_folder, exist_ok=True)
@@ -539,11 +590,8 @@ def update_matches_and_scores(db_session):
     print("Updating matches and user scores...")
     
     # Update unfinished matches
-    unfinished_matches_db = db_session.query(Match).filter(Match.matchIsFinished == 0).all()
-    for unfinished_match in unfinished_matches_db:
-        update_match_if_needed(db_session, unfinished_match)
-
-    # Update user scores
+    #unfinished_matches_db = db_session.query(Match).filter(Match.matchIsFinished == 0).all()
+    insert_or_update_matches_to_db(db_session)    # Update user scores
     update_user_scores(db_session)
     print("Matches and user scores updated.")
 
@@ -736,7 +784,7 @@ def find_live_matches(db_session):
 @timer
 def update_live_matches_and_scores(db_session):
     print("Updating live matches and user scores...")
-    
+
     live_matches = find_live_matches(db_session)
     game_updated = False
 
