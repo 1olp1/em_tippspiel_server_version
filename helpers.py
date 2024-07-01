@@ -183,6 +183,55 @@ def update_user_scores(db_session):
     # Award points for the predictions in the prediction table
     award_predictions(db_session)
 
+    # Award users based on the points for each prediction
+    award_users(db_session)
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time for update_user_scores: {elapsed_time:.4f} seconds")
+
+
+def award_predictions(db_session):
+    # Get matches that need to be evaluated
+    matches = db_session.query(Match).filter(
+        ((Match.matchIsFinished == 1) | (Match.is_underway == True)),
+        Match.predictions_evaluated == 0
+    ).all()
+
+    predictions_awarded = False
+    
+    for match in matches:
+        # Calculate match outcome parameters
+        print("Awarding prediction for match: ", match.id)
+        if match.team1_score != None:
+            team1_score = match.team1_score
+            team2_score = match.team2_score
+            goal_diff = team1_score - team2_score
+            winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
+
+            # Update predictions in bulk # chatGPT
+            db_session.query(Prediction).filter(Prediction.match_id == match.id).update({
+                Prediction.points: case(
+                    (Prediction.team1_score == team1_score and Prediction.team2_score == team2_score, 4),
+                    (Prediction.goal_diff == goal_diff and winner != 0, 3),
+                    (Prediction.winner == winner or Prediction.goal_diff == goal_diff and winner == 0, 2),
+                    else_=0
+                )
+            }, synchronize_session=False)
+
+            # Update match evaluation status
+            if match.matchIsFinished == 1:
+                match.predictions_evaluated = 1
+            match.evaluation_Date = get_current_datetime_as_object()
+
+            predictions_awarded = True
+
+    if predictions_awarded:
+        # Commit changes for match predictions
+        db_session.commit()
+
+
+def award_users(db_session):
     # Update total points in the users table in bulk # chatGPT
     user_predictions = db_session.query(
         Prediction.user_id,
@@ -202,44 +251,6 @@ def update_user_scores(db_session):
 
     # Commit all changes to the database
     db_session.commit()
-    
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Elapsed time for update_user_scores: {elapsed_time:.4f} seconds")
-
-
-def award_predictions(db_session):
-    # Get matches that need to be evaluated
-    matches = db_session.query(Match).filter(
-        Match.is_underway == True,
-        Match.predictions_evaluated == 0
-    ).all()
-    
-    for match in matches:
-        # Calculate match outcome parameters
-        team1_score = match.team1_score
-        team2_score = match.team2_score
-        goal_diff = team1_score - team2_score
-        winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
-
-        # Update predictions in bulk # chatGPT
-        db_session.query(Prediction).filter(Prediction.match_id == match.id).update({
-            Prediction.points: case(
-                (Prediction.team1_score == team1_score and Prediction.team2_score == team2_score, 4),
-                (Prediction.goal_diff == goal_diff and winner != 0, 3),
-                (Prediction.winner == winner or Prediction.goal_diff == goal_diff and winner == 0, 2),
-                else_=0
-            )
-        }, synchronize_session=False)
-
-        # Update match evaluation status
-        if match.matchIsFinished == 1:
-            match.predictions_evaluated = 1
-        match.evaluation_Date = get_current_datetime_as_object()
-
-    # Commit changes for match predictions
-    db_session.commit()
-
 
 
 def get_valid_matches(matches):
@@ -699,7 +710,7 @@ def find_closest_in_time_kickoff_match_db(db_session):
     return query
 
 
-def find_matches_around_time_window(db_session, window_minutes=180):
+def find_live_matches(db_session, window_minutes=180):
     current_time = datetime.now()
     start_time = current_time - timedelta(minutes=window_minutes)
     end_time = current_time + timedelta(minutes=window_minutes)
@@ -710,7 +721,8 @@ def find_matches_around_time_window(db_session, window_minutes=180):
     ).filter(
         and_(
             Match.matchDateTime >= start_time,
-            Match.matchDateTime <= end_time
+            Match.matchDateTime <= end_time,
+            Match.is_underway == True
         )
     ).order_by(
         func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, func.now()))

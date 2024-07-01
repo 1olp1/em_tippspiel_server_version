@@ -4,7 +4,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores, find_matches_around_time_window, find_closest_in_time_kickoff_match_db, timer
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores, find_live_matches, find_closest_in_time_kickoff_match_db, timer
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -48,18 +48,14 @@ def rangliste():
             last_update = convert_iso_datetime_to_human_readable(last_update) if last_update else None
 
             # To be able to display live scores, collect all matches within a time window and update them if they are live
-            close_matches = find_matches_around_time_window(db_session, window_minutes=180)
+            live_matches = find_live_matches(db_session, window_minutes=180)
             game_updated = False
-            for close_match in close_matches:
-                if close_match.is_underway:
-                    update_match_in_db(get_matchdata_openliga(close_match.id), close_match, db_session)
-                    game_updated = True
+            for live_match in live_matches:
+                update_match_in_db(get_matchdata_openliga(live_match.id), live_match, db_session)
+                game_updated = True
             
             if game_updated:
                 update_user_scores(db_session)
-            
-            update_user_scores(db_session)
-                
 
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
