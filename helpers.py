@@ -377,8 +377,8 @@ def insert_or_update_matches_to_db(db_session):
             # Local variable if match is finished
             matchFinished = match["matchIsFinished"]
 
-            team1_score = match["matchResults"][1]["pointsTeam1"] if matchFinished else None
-            team2_score = match["matchResults"][1]["pointsTeam2"] if matchFinished else None
+            team1_score = match["matchResults"][-1]["pointsTeam1"] if matchFinished else None
+            team2_score = match["matchResults"][-1]["pointsTeam2"] if matchFinished else None
 
             match_entry = Match(
                 id=match["matchID"],
@@ -591,6 +591,7 @@ def update_matches_and_scores(db_session):
     
     # Update unfinished matches
     #unfinished_matches_db = db_session.query(Match).filter(Match.matchIsFinished == 0).all()
+    
     insert_or_update_matches_to_db(db_session)    # Update user scores
     update_user_scores(db_session)
     print("Matches and user scores updated.")
