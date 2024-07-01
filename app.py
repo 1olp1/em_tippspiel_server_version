@@ -4,7 +4,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores, find_live_matches, find_closest_in_time_kickoff_match_db, timer
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_live_matches_and_scores, find_closest_in_time_kickoff_match_db, update_matches_and_scores
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -47,15 +47,8 @@ def rangliste():
             last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
             last_update = convert_iso_datetime_to_human_readable(last_update) if last_update else None
 
-            # To be able to display live scores, collect all matches within a time window and update them if they are live
-            live_matches = find_live_matches(db_session, window_minutes=180)
-            game_updated = False
-            for live_match in live_matches:
-                update_match_in_db(get_matchdata_openliga(live_match.id), live_match, db_session)
-                game_updated = True
-            
-            if game_updated:
-                update_user_scores(db_session)
+            # Update live matches for live scoring
+            update_live_matches_and_scores(db_session)
             
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
@@ -85,6 +78,7 @@ def rangliste():
 
             end_time = time.time()
             elapsed_time = end_time - start_time
+            print("Match to display: ", index_of_closest_in_time_match)
             print(f"Elapsed time for Rangliste: {elapsed_time:.4f} seconds")
                         
             return render_template("rangliste.html",
@@ -241,7 +235,7 @@ def login():
                 # Remember which user has logged in
                 session["user_id"] = user.id
 
-                update_db(db_session)
+                update_matches_and_scores(db_session)   # TODO updating tables?
 
                 # Redirect user to home page
                 return redirect("/")
