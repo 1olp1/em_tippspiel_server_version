@@ -1,6 +1,7 @@
 from flask import flash, redirect, session
-from sqlalchemy import func, text, desc, asc
+from sqlalchemy import func, text, desc, and_, case
 from sqlalchemy.orm import joinedload
+import time
 from functools import wraps
 import requests
 import uuid
@@ -29,6 +30,17 @@ img_folder =  os.path.join(local_folder_path, "team-logos")
 
 # Dummy team info
 dummy_team_id = 5251
+
+
+def timer(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Elapsed time for {func.__name__}: {elapsed_time:.4f} seconds")
+        return result
+    return wrapper
 
 
 def get_matches_db(db_session):
@@ -77,6 +89,7 @@ def get_league_table(db_session):
     return db_session.query(Team).order_by(Team.teamRank.asc()).all()
 
 
+@timer
 def update_db(db_session):
     try:
         print("\nIs update needed for league table?")
@@ -165,54 +178,68 @@ def update_league_table(db_session):
 
 
 def update_user_scores(db_session):
-    # Get data for evaluating the predictions
-    matches = get_matches_db(db_session)
+    start_time = time.time()
     
-    for match in matches:
-        if (match.matchIsFinished == 1 or match.is_underway) and match.predictions_evaluated == 0:
-            # Calculate match outcome parameters
-            team1_score = match.team1_score
-            team2_score = match.team2_score
-            goal_diff = team1_score - team2_score
-            winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
+    # Award points for the predictions in the prediction table
+    award_predictions(db_session)
 
-            # Get predictions for this match
-            predictions = db_session.query(Prediction).filter(Prediction.match_id == match.id).all()
+    # Update total points in the users table in bulk # chatGPT
+    user_predictions = db_session.query(
+        Prediction.user_id,
+        func.sum(Prediction.points).label('total_points'),
+        func.count(case((Prediction.points == 4, 1))).label('correct_result'),
+        func.count(case((Prediction.points == 3, 1))).label('correct_goal_diff'),
+        func.count(case((Prediction.points == 2, 1))).label('correct_tendency')
+    ).group_by(Prediction.user_id).all()
 
-            for prediction in predictions:
-                if team1_score == prediction.team1_score and team2_score == prediction.team2_score:
-                    prediction.points = 4
-                elif goal_diff == prediction.goal_diff and winner != 0:
-                    prediction.points = 3
-                elif winner == prediction.winner or goal_diff == prediction.goal_diff and winner == 0:
-                    prediction.points = 2
-                else:
-                    prediction.points = 0
-
-            # Update match evaluation status
-            if match.matchIsFinished == 1:
-                match.predictions_evaluated = 1
-            match.evaluation_Date = get_current_datetime_as_object()
-
-    # Update total points in the users table (Query with help from chatGPT)
-    users = db_session.query(User).all()
-
-    # Update total_points for each user
-    for user in users:
-        # Update user total points
-        user.total_points = db_session.query(func.sum(Prediction.points)).filter(Prediction.user_id == user.id).scalar() or 0
-
-        # Correct predictions with 4 points
-        user.correct_result = db_session.query(func.count()).filter(Prediction.points == 4, Prediction.user_id == user.id).scalar() or 0
-
-        # Correct goal diff predictions 3 points
-        user.correct_goal_diff = db_session.query(func.count()).filter(Prediction.points == 3, Prediction.user_id == user.id).scalar() or 0
-
-        # Correct tendency predictions 2 points
-        user.correct_tendency = db_session.query(func.count()).filter(Prediction.points == 2, Prediction.user_id == user.id).scalar() or 0
+    for user_prediction in user_predictions:
+        db_session.query(User).filter(User.id == user_prediction.user_id).update({
+            User.total_points: user_prediction.total_points,
+            User.correct_result: user_prediction.correct_result,
+            User.correct_goal_diff: user_prediction.correct_goal_diff,
+            User.correct_tendency: user_prediction.correct_tendency
+        }, synchronize_session=False)
 
     # Commit all changes to the database
     db_session.commit()
+    
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time for update_user_scores: {elapsed_time:.4f} seconds")
+
+
+def award_predictions(db_session):
+    # Get matches that need to be evaluated
+    matches = db_session.query(Match).filter(
+        Match.is_underway == True,
+        Match.predictions_evaluated == 0
+    ).all()
+    
+    for match in matches:
+        # Calculate match outcome parameters
+        team1_score = match.team1_score
+        team2_score = match.team2_score
+        goal_diff = team1_score - team2_score
+        winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
+
+        # Update predictions in bulk # chatGPT
+        db_session.query(Prediction).filter(Prediction.match_id == match.id).update({
+            Prediction.points: case(
+                (Prediction.team1_score == team1_score and Prediction.team2_score == team2_score, 4),
+                (Prediction.goal_diff == goal_diff and winner != 0, 3),
+                (Prediction.winner == winner or Prediction.goal_diff == goal_diff and winner == 0, 2),
+                else_=0
+            )
+        }, synchronize_session=False)
+
+        # Update match evaluation status
+        if match.matchIsFinished == 1:
+            match.predictions_evaluated = 1
+        match.evaluation_Date = get_current_datetime_as_object()
+
+    # Commit changes for match predictions
+    db_session.commit()
+
 
 
 def get_valid_matches(matches):
@@ -426,7 +453,7 @@ def is_update_needed_league_table(db_session):
 
     # Get current matchday from API and DB
     current_matchday_API = get_current_matchday_openliga()
-    current_match_db = find_closest_in_time_match_db(db_session)
+    current_match_db = find_closest_in_time_kickoff_match_db(db_session)
 
     current_matchday_db = current_match_db.matchday if current_match_db else None
 
@@ -465,7 +492,7 @@ def is_update_needed_matches(db_session):
 
     # Get current matchday from API and DB
     current_matchday_API = get_current_matchday_openliga()
-    current_match_db = find_closest_in_time_match_db(db_session)
+    current_match_db = find_closest_in_time_kickoff_match_db(db_session)
 
     current_matchday_db = current_match_db.matchday if current_match_db else None
 
@@ -529,13 +556,10 @@ def update_match_in_db(matchdata_API, match_db, db_session):
     update_data = {
         Match.matchDateTime: matchdata_API["matchDateTime"],
         Match.matchIsFinished: matchFinished,
-        Match.lastUpdateDateTime: matchdata_API["lastUpdateDateTime"]
+        Match.lastUpdateDateTime: matchdata_API["lastUpdateDateTime"],
+        Match.team1_id: matchdata_API["team1"]["teamId"],
+        Match.team2_id: matchdata_API["team2"]["teamId"]
     }
-
-    # If teams were not yet determined, update team_id's    
-    if match_db.team1_id == dummy_team_id or match_db.team2_id == dummy_team_id:
-        update_data[Match.team1_id] = matchdata_API["team1"]["teamId"]
-        update_data[Match.team2_id] = matchdata_API["team2"]["teamId"]
 
     # Conditionally update team scores based on match finished status
     if matchFinished:
@@ -662,21 +686,41 @@ def normalize_datetime(input_dt):
     return dt_without_microseconds
 
 
-def find_closest_in_time_match_db(db_session):
+def find_closest_in_time_kickoff_match_db(db_session):
     # Query to find the match closest in time, adding 140 minutes to matchDateTime
     # Query with help from chatgpt
     query = db_session.query(Match).options(
         joinedload(Match.team1),
         joinedload(Match.team2)
     ).order_by(
-        func.abs(func.timestampdiff(text('SECOND'), func.timestampadd(text('MINUTE'), 140, Match.matchDateTime), func.now()))
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, func.now()))
     ).first()
 
     return query
 
 
+def find_matches_around_time_window(db_session, window_minutes=180):
+    current_time = datetime.now()
+    start_time = current_time - timedelta(minutes=window_minutes)
+    end_time = current_time + timedelta(minutes=window_minutes)
+
+    matches = db_session.query(Match).options(
+        joinedload(Match.team1),
+        joinedload(Match.team2)
+    ).filter(
+        and_(
+            Match.matchDateTime >= start_time,
+            Match.matchDateTime <= end_time
+        )
+    ).order_by(
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, func.now()))
+    ).all()
+
+    return matches
+
+
 def find_closest_in_time_matchday_db(db_session):
-    return find_closest_in_time_match_db(db_session).matchday
+    return find_closest_in_time_kickoff_match_db(db_session).matchday
 
 
 def find_closest_in_time_match_db_matchday(db_session, matchday):
@@ -695,7 +739,6 @@ def find_closest_in_time_match_db_matchday(db_session, matchday):
     ).first()           # Query by chatgpt
 
     return current_matchday_data_db
-
 
 
 def find_next_matchday_db(db_session):
@@ -729,3 +772,5 @@ def group_matches_by_date(matches):
         match_date = match.formatted_matchDate
         matches_by_date[match_date].append(match)
     return matches_by_date
+
+

@@ -1,9 +1,10 @@
 from flask import flash, redirect, render_template, request, session
+import time
 from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_db, get_matchdata_openliga, update_match_in_db, update_user_scores, find_matches_around_time_window, find_closest_in_time_kickoff_match_db, timer
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -16,10 +17,10 @@ def after_request(response):
     response.headers["Pragma"] = "no-cache"
     return response
 
-
 @app.route("/rangliste", methods=["GET", "POST"])
 @login_required
 def rangliste():
+    start_time = time.time()
     try:
         with get_db_session() as db_session:
             # Fetch all matches
@@ -27,12 +28,12 @@ def rangliste():
 
             # Determine matchday_to_display based on session or default to closest matchday
             if request.method == "GET":
-                closest_in_time_match = find_closest_in_time_match_db(db_session)
-                matchday_to_display = int(request.args.get('matchday', closest_in_time_match.matchday))
+                closest_in_time_kickoff_match = find_closest_in_time_kickoff_match_db(db_session)
+                matchday_to_display = int(request.args.get('matchday', closest_in_time_kickoff_match.matchday))
                 session['matchday_to_display'] = matchday_to_display
             else:
                 matchday_to_display = session.get('matchday_to_display')
-
+        
             # Get list of matchdays and formatted matchdays for display
             matchdays_data = sorted(set((match.matchday, match.formatted_matchday) for match in matches))
             matchdays, matchdays_formatted = zip(*matchdays_data)
@@ -42,14 +43,23 @@ def rangliste():
             next_matchday = matchdays[current_index + 1] if current_index + 1 < len(matchdays) else None
             prev_matchday = matchdays[current_index - 1] if current_index > 0 else None
 
-            # Get last update time
+            # Get last update time for display
             last_update = db_session.query(func.max(Match.evaluation_Date)).scalar()
             last_update = convert_iso_datetime_to_human_readable(last_update) if last_update else None
 
-            print(f"closest match is {closest_in_time_match.id} and is underway? {closest_in_time_match.is_underway}")
-            if closest_in_time_match.is_underway:
-                update_match_in_db(get_matchdata_openliga(closest_in_time_match.id), closest_in_time_match, db_session)
+            # To be able to display live scores, collect all matches within a time window and update them if they are live
+            close_matches = find_matches_around_time_window(db_session, window_minutes=180)
+            game_updated = False
+            for close_match in close_matches:
+                if close_match.is_underway:
+                    update_match_in_db(get_matchdata_openliga(close_match.id), close_match, db_session)
+                    game_updated = True
+            
+            if game_updated:
                 update_user_scores(db_session)
+            
+            update_user_scores(db_session)
+                
 
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
@@ -76,9 +86,11 @@ def rangliste():
             match_ids = [match.id for match in filtered_matches]
             index_of_closest_in_time_match = match_ids.index(find_closest_in_time_match_db_matchday(db_session, matchday_to_display).id) + 1 # +1 because loop index in jinja starts at 1
             no_filtered_matches = len(match_ids)
-            
-            
 
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Elapsed time for Rangliste: {elapsed_time:.4f} seconds")
+                        
             return render_template("rangliste.html",
                                 matches=filtered_matches,
                                 prev_matchday=prev_matchday,
