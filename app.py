@@ -56,7 +56,7 @@ def rangliste():
             
             if game_updated:
                 update_user_scores(db_session)
-
+            
             # Fetch all users sorted by multiple criteria
             users = db_session.query(User).options(
                 joinedload(User.predictions)  # Ensures predictions are loaded with users

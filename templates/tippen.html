@@ -44,31 +44,22 @@
             <tbody>
                 {% for match_date, matches in matches_by_date.items() %}
                     <tr>
-                        <td class="table-date-header"></td>
-                        <td colspan="5" class="table-date-header">
+                        <td colspan="6" class="table-date-header">
                             {{ match_date }}
                         </td>
-                        <td class="table-date-header"></td>
                     </tr>
                     {% for match in matches %}
                         <tr>
                             <td class="text-center">{{ match.time }}</td>
                             <td class="text-right">{{ match.team1.teamName }}</td>
                             <td><img src="{{ match.team1.teamIconPath }}" alt="{{ match.team1.teamName }}-logo" class="team-logo"></td>
-                            <td>
-                                {% if match.matchIsFinished == 1 %}
-                                    <strong>{{ match.team1_score }}&nbsp;:&nbsp;{{ match.team2_score }}</strong>
-                                {% else %}
-                                    <strong>- : -</strong>
-                                {% endif %}
-                            </td>
-                            <td><img src="{{ match.team2.teamIconPath }}" alt="{{ match.team2.teamName }}-logo" class="team-logo"></td>
-                            <td class="text-left">{{ match.team2.teamName }}</td>
                             <td class="text-center">
                                 <input type="text" autocomplete="off" class="form-control score-input" placeholder="-" id="desktop_team1Score_{{ match.id }}" name="team1Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team1_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled {% endif %}>
                                 <strong>:</strong>
                                 <input type="text" autocomplete="off" class="form-control score-input" placeholder="-" id="desktop_team2Score_{{ match.id }}" name="team2Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team2_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled {% endif %}>
                             </td>
+                            <td><img src="{{ match.team2.teamIconPath }}" alt="{{ match.team2.teamName }}-logo" class="team-logo"></td>
+                            <td class="text-left">{{ match.team2.teamName }}</td>
                         </tr>
                     {% endfor %}
                 {% endfor %}
@@ -82,35 +73,19 @@
             <tbody>
                 {% for match_date, matches in matches_by_date.items() %}
                     <tr>
-                        <td class="table-date-header"></td>
-                        <td colspan="6" class="table-date-header">
+                        <td colspan="3" class="table-date-header">
                             {{ match_date }}
                         </td>
-                        <td class="table-date-header"></td>
                     </tr>
                     {% for match in matches %}
                         <tr>
-                            <td class="text-center">{{ match.time }}</td>
-                            <td class="text-right">{{ match.team1.teamName }}</td>
-                            <td colspan="4" class="text-center">
-                                {% if match.matchIsFinished == 1 %}
-                                    <strong>{{ match.team1_score }}&nbsp;:&nbsp;{{ match.team2_score }}</strong>
-                                {% else %}
-                                    <strong>- : -</strong>
-                                {% endif %}
-                            </td>
-                            <td class="text-left">{{ match.team2.teamName }}</td>
-                            <td></td>
-                        </tr>
-                        <tr>
-                            <td></td>
-                            <td colspan="6" class="text-center">
-                                <input type="text" autocomplete="off" class="form-control score-input" placeholder="-" id="mobile_team1Score_{{ match.id }}" name="team1Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team1_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled {% endif %}>
+                            <td class="text-right"><br>{{ match.team1.teamName }}</td>
+                            <td class="text-center">
+                                {{ match.time }} <br><input type="text" autocomplete="off" class="form-control score-input" placeholder="-" id="mobile_team1Score_{{ match.id }}" name="team1Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team1_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled {% endif %}>
                                 <strong>:</strong>
                                 <input type="text" autocomplete="off" class="form-control score-input" placeholder="-" id="mobile_team2Score_{{ match.id }}" name="team2Score_{{ match.id }}" min="0" max="99" maxlength="2" value="{% for prediction in predictions %}{% if prediction.match_id == match.id %}{{ prediction.team2_score }}{% endif %}{% endfor %}" {% if match not in valid_matches %} disabled {% endif %}>
                             </td>
-                            <td></td>
-                        </tr>
+                            <td class="text-left"><br>{{ match.team2.teamName }}</td>
                     {% endfor %}
                 {% endfor %}
             </tbody>

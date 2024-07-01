@@ -92,16 +92,7 @@ def get_league_table(db_session):
 @timer
 def update_db(db_session):
     try:
-        print("\nIs update needed for league table?")
-        if get_current_matchday_openliga() <= games_group_stage and is_update_needed_league_table(db_session):
-            print("\tYes. Updating league table...")
-            update_league_table(db_session)
-            print("\tLeague table update finished.")
-        
-        else:
-            print("\tNo update needed.")
-
-        print("\nIs update needed for matches?")
+        print("\nIs update needed?")
         if is_update_needed_matches(db_session):
             print("\tYes. Updating matches database...")
             update_matches_db(db_session)
@@ -110,7 +101,15 @@ def update_db(db_session):
             print("\tUpdating user scores...")
             update_user_scores(db_session)
             print("\tUser scores update finished.")
-        
+
+            print("\nIs update needed for league table?")
+            if get_current_matchday_openliga() <= games_group_stage:
+                print("\tYes. Updating league table...")
+                update_league_table(db_session)
+                print("\tLeague table update finished.")
+            else:
+                print("\tNo league table update needed.")
+
         else:
             print("\tNo update needed.")
 
@@ -199,22 +198,21 @@ def award_predictions(db_session):
     ).all()
 
     predictions_awarded = False
-    
+
     for match in matches:
-        # Calculate match outcome parameters
-        print("Awarding prediction for match: ", match.id)
-        if match.team1_score != None:
+        if match.team1_score is not None:
+            # Calculate match outcome parameters
             team1_score = match.team1_score
             team2_score = match.team2_score
             goal_diff = team1_score - team2_score
             winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
 
-            # Update predictions in bulk # chatGPT
+            # Update predictions in bulk
             db_session.query(Prediction).filter(Prediction.match_id == match.id).update({
                 Prediction.points: case(
-                    (Prediction.team1_score == team1_score and Prediction.team2_score == team2_score, 4),
-                    (Prediction.goal_diff == goal_diff and winner != 0, 3),
-                    (Prediction.winner == winner or Prediction.goal_diff == goal_diff and winner == 0, 2),
+                    ((Prediction.team1_score == team1_score) & (Prediction.team2_score == team2_score), 4),
+                    ((Prediction.goal_diff == goal_diff) & (winner != 0), 3),
+                    (((Prediction.winner == winner) | ((Prediction.goal_diff == goal_diff) & (winner == 0))), 2),
                     else_=0
                 )
             }, synchronize_session=False)
@@ -229,7 +227,7 @@ def award_predictions(db_session):
     if predictions_awarded:
         # Commit changes for match predictions
         db_session.commit()
-
+        
 
 def award_users(db_session):
     # Update total points in the users table in bulk # chatGPT
