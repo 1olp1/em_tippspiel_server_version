@@ -4,7 +4,7 @@ from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
-from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_live_matches_and_scores, find_closest_in_time_kickoff_match_db, update_matches_and_scores
+from helpers import login_required, get_league_table, get_valid_matches, convert_iso_datetime_to_human_readable, get_insights, find_closest_in_time_matchday_db, group_matches_by_date, process_predictions, find_closest_in_time_match_db_matchday, update_live_matches_and_scores, find_closest_in_time_kickoff_match_db, update_matches_and_scores, find_next_match_db
 from models import User, Prediction, Match
 from config import app, get_db_session
 
@@ -113,9 +113,9 @@ def tippen():
             # Filter valid matches for predictions
             valid_matches = get_valid_matches(matches)
 
-            # Determine matchday_to_display based on session or default to closest matchday
+            # Determine matchday_to_display based on session or default to next_matchday
             if request.method == "GET":
-                matchday_to_display = int(request.args.get('matchday', find_closest_in_time_matchday_db(db_session)))
+                matchday_to_display = int(request.args.get('matchday', find_next_match_db(db_session).matchday))
                 session['matchday_to_display'] = matchday_to_display
             else:
                 matchday_to_display = session.get('matchday_to_display')

@@ -267,6 +267,8 @@ def get_valid_matches(matches):
 
 def process_predictions(valid_matches, session, db_session, request):
     prediction_added = False
+    error_message = "Keine Änderungen oder Tipps fehlerhaft"
+    success_message = "Tipp(s) erfolgreich gespeichert"
     
     # Iterate through valid matches and process predictions
     for match in valid_matches:
@@ -295,6 +297,10 @@ def process_predictions(valid_matches, session, db_session, request):
         # Determine winner based on scores
         winner = 1 if team1_score > team2_score else 2 if team1_score < team2_score else 0
 
+        if winner == 0 and match.matchday > games_group_stage:
+            error_message = "Kein Unentschieden bei KO-Spielen möglich"
+            continue
+
         if prediction:
             # Update existing prediction if changed
             if team1_score != prediction.team1_score or team2_score != prediction.team2_score:
@@ -322,9 +328,10 @@ def process_predictions(valid_matches, session, db_session, request):
     # Commit changes if predictions were added
     if prediction_added:
         db_session.commit()
-        flash("Tipps erfolgreich gespeichert.", "success")
+        flash(success_message, "success")
     else:
-        flash("Keine Änderungen oder Tipps fehlerhaft.", "warning")
+        flash(error_message, "error")
+
 
 
 def update_match_score_for_live_scores(db_session, match_API):
@@ -771,6 +778,16 @@ def find_next_matchday_db(db_session):
     ).first()
 
     return next_matchday_db.matchday
+
+
+def find_next_match_db(db_session):
+    query = db_session.query(
+        Match
+        ).filter(
+            Match.matchIsFinished == 0
+        ).first()
+    return query
+
 
 def get_most_recent_match_by_matchday(db_session, current_matchday_API):
     most_recent_match = db_session.query(Match).filter_by(matchday=current_matchday_API).order_by(desc(Match.lastUpdateDateTime)).first()
