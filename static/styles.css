@@ -174,14 +174,6 @@ nav .navbar-brand .blue {
 }
 
 
-/* Index route formatting */
-.card-text, .stats {
-    display: flex;
-}
-.stats {
-    margin-bottom: 0.1rem;
-}
-
 /* CSS for responsive design */
 .table-responsive-desktop {
     max-height: 620px; /* Adjust as needed */
@@ -233,3 +225,44 @@ nav .navbar-brand .blue {
         display: inline-block; /* or display: block; */
     }
 }
+
+/* Index route formatting */
+.card-body {
+    text-align: left; /* Ensure the card body text is left-aligned */
+  }
+  .stats {
+    display: flex;
+    justify-content: space-between; /* Distribute space between the text and the span */
+  }
+  .stats span {
+    text-align: right; /* Right-align text inside the span */
+    margin-left: auto; /* Push the span to the right */
+  }
+
+/* Regeln route formatting */
+.card-body {
+    padding: 1.5rem; /* Adjust padding as needed */
+  }
+  
+  .card-title {
+    color: rgb(22, 104, 255); /* Example text color */
+    font-size: 1.5rem; /* Example font size */
+  }
+  
+  ul.list-unstyled {
+    padding: left 10px;
+  }
+  
+  ul.list-unstyled li {
+    margin-bottom: 0.5rem; /* Adjust margin between list items */
+    list-style-type: none; /* Remove default list bullets */
+  }
+  
+  ul.list-unstyled li:before {
+    content: "\2022"; /* Use bullet character as list item marker */
+    color: #0055a0; /* Example bullet color */
+    display:inline-table;
+    width: 1em;
+    margin-left: -0.5em; /* Adjust position for bullet */
+  }
+  

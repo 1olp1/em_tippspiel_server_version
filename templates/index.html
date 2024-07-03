@@ -6,20 +6,6 @@
 
 {% block main %}
 
-<style>
-  .card-body {
-    text-align: left; /* Ensure the card body text is left-aligned */
-  }
-  .stats {
-    display: flex;
-    justify-content: space-between; /* Distribute space between the text and the span */
-  }
-  .stats span {
-    text-align: right; /* Right-align text inside the span */
-    margin-left: auto; /* Push the span to the right */
-  }
-</style>
-
 <div class="card rounded-4" style="width: 20rem;">
   <div class="card-body">
     <h4 class="card-title" style="text-align: center;"> Hallo {{ insights.username }}! </h4>
@@ -35,7 +21,14 @@
     <div class="stats">Richtiges Torverhältnis: <span>{{ insights.corr_goal_diff_p }}% ({{ insights.corr_goal_diff }}x)</span></div>
     <div class="stats">Richtige Tendenz: <span>{{ insights.corr_tendency_p }}% ({{ insights.corr_tendency }}x)</span></div>
     <div class="stats">Falscher Tipp: <span>{{ insights.wrong_predictions_p }}% ({{ insights.wrong_predictions }}x)</span></div>
+    </div>
+</div>
+<div class="row">
+  <div class="col-12 d-sm-none justify-content-between">
+    <a href="{{ url_for('tippen') }}" class="btn btn-primary mt-3 ml-sm-2" style="margin-right: 10px;">Tippen</a>
+    <a href="{{ url_for('rangliste') }}" class="btn btn-primary mt-3">Zur Rangliste</a>
   </div>
 </div>
+
 
 {% endblock %}

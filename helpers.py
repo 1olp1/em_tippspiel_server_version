@@ -1,5 +1,5 @@
 from flask import flash, redirect, session
-from sqlalchemy import func, text, desc, case
+from sqlalchemy import func, text, desc, case, or_, and_
 from sqlalchemy.orm import joinedload
 import time
 from functools import wraps
@@ -148,6 +148,36 @@ def update_league_table(db_session):
         db_session.commit()
 
 
+def insert_or_update_matches_to_db(db_session):
+    # Query openliga API with link from above
+    matchdata = get_openliga_json(url_matchdata)
+
+    if matchdata:
+        for match in matchdata:
+            # Local variable if match is finished
+            matchFinished = match["matchIsFinished"]
+
+            team1_score = match["matchResults"][-1]["pointsTeam1"] if matchFinished else None   # -1 ensures that only final score is saved
+            team2_score = match["matchResults"][-1]["pointsTeam2"] if matchFinished else None
+
+            match_entry = Match(
+                id=match["matchID"],
+                matchday=match["group"]["groupOrderID"],
+                team1_id=match["team1"]["teamId"],
+                team2_id=match["team2"]["teamId"],
+                team1_score=team1_score,
+                team2_score=team2_score,
+                matchDateTime=match["matchDateTime"],
+                matchIsFinished=matchFinished,
+                location=match["location"]["locationCity"],
+                lastUpdateDateTime=match["lastUpdateDateTime"]
+            )
+            
+            db_session.merge(match_entry)  # Use merge to insert or update
+
+    db_session.commit()
+
+
 def update_user_scores(db_session):
     start_time = time.time()
     
@@ -164,14 +194,21 @@ def update_user_scores(db_session):
 
 def award_predictions(db_session):
     # Get matches that need to be evaluated
-    matches = db_session.query(Match).filter(
-        ((Match.matchIsFinished == 1) | (Match.is_underway == True)),
-        Match.predictions_evaluated == 0
+    current_time = datetime.now()
+    matches_to_evaluate = db_session.query(Match).filter(
+        Match.predictions_evaluated == 0,
+        or_(
+            Match.matchIsFinished == 1,
+            and_(
+                Match.matchDateTime <= current_time,
+                Match.matchIsFinished == 0
+            )
+        )
     ).all()
 
     predictions_awarded = False
 
-    for match in matches:
+    for match in matches_to_evaluate:
         if match.team1_score is not None:
             # Calculate match outcome parameters
             team1_score = match.team1_score
@@ -290,32 +327,20 @@ def process_predictions(valid_matches, session, db_session, request):
         flash("Keine Änderungen oder Tipps fehlerhaft.", "warning")
 
 
-def insert_or_update_matches_to_db(db_session):
-    # Query openliga API with link from above
-    matchdata = get_openliga_json(url_matchdata)
+def update_match_score_for_live_scores(db_session, match_API):
+    match = match_API
 
-    if matchdata:
-        for match in matchdata:
-            # Local variable if match is finished
-            matchFinished = match["matchIsFinished"]
+    team1_score = match["matchResults"][-1]["pointsTeam1"] if match["matchResults"] else None
+    team2_score = match["matchResults"][-1]["pointsTeam2"] if match["matchResults"] else None
 
-            team1_score = match["matchResults"][-1]["pointsTeam1"] if matchFinished else None   # -1 ensures that only final score is saved
-            team2_score = match["matchResults"][-1]["pointsTeam2"] if matchFinished else None
-
-            match_entry = Match(
-                id=match["matchID"],
-                matchday=match["group"]["groupOrderID"],
-                team1_id=match["team1"]["teamId"],
-                team2_id=match["team2"]["teamId"],
-                team1_score=team1_score,
-                team2_score=team2_score,
-                matchDateTime=match["matchDateTime"],
-                matchIsFinished=matchFinished,
-                location=match["location"]["locationCity"],
-                lastUpdateDateTime=match["lastUpdateDateTime"]
-            )
-            
-            db_session.merge(match_entry)  # Use merge to insert or update
+    match_entry = Match(
+        id=match["matchID"],
+        team1_score=team1_score,
+        team2_score=team2_score,
+        lastUpdateDateTime=match["lastUpdateDateTime"]
+    )
+    
+    db_session.merge(match_entry)  # Use merge to insert or update
 
     db_session.commit()
 
@@ -549,6 +574,26 @@ def update_matches_and_scores(db_session):
     print("Matches and user scores updated.")
 
 
+@timer
+def update_live_matches_and_scores(db_session):
+    print("Updating live matches and user scores...")
+
+    live_matches = find_live_matches(db_session)
+    game_updated = False
+
+    for match in live_matches:
+        match_data = get_matchdata_openliga(match.id)
+        if match_data:
+            update_match_score_for_live_scores(db_session, match_data)
+            if match_data["matchIsFinished"] == 1:
+                update_matches_and_scores(db_session)       # In order to also update other matchups that may depend
+            game_updated = True                             # on the live match that has ended, like in a tournament
+                                                            # TODO add routine for league table
+    if game_updated:
+        update_user_scores(db_session)
+    print("Updating live matches and user scores finished.")
+
+
 def get_matchdata_openliga(id):
     url = f"https://api.openligadb.de/getmatchdata/{id}"
 
@@ -662,12 +707,13 @@ def normalize_datetime(input_dt):
 
 def find_closest_in_time_kickoff_match_db(db_session):
     # Query to find the match closest in time, adding 140 minutes to matchDateTime
+    current_time = datetime.now()
     # Query with help from chatgpt
     query = db_session.query(Match).options(
         joinedload(Match.team1),
         joinedload(Match.team2)
     ).order_by(
-        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, func.now()))
+        func.abs(func.timestampdiff(text('SECOND'), Match.matchDateTime, current_time))
     ).first()
 
     return query
@@ -682,24 +728,6 @@ def find_live_matches(db_session):
     ).all()
     
     return live_matches
-
-
-@timer
-def update_live_matches_and_scores(db_session):
-    print("Updating live matches and user scores...")
-
-    live_matches = find_live_matches(db_session)
-    game_updated = False
-
-    for match in live_matches:
-        match_data = get_matchdata_openliga(match.id)
-        if match_data:
-            update_match_in_db(match_data, match, db_session)
-            game_updated = True
-    
-    if game_updated:
-        update_user_scores(db_session)
-    print("Updating live matches and user scores finished.")
 
 
 def find_closest_in_time_matchday_db(db_session):
