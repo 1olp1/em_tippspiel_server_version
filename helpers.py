@@ -153,20 +153,8 @@ def insert_or_update_matches_to_db(db_session):
     matchdata = get_openliga_json(url_matchdata)
 
     if matchdata:
-        for match in matchdata:
-            # Local variable if match is finished
-            matchFinished = match["matchIsFinished"]
-            
-            if matchFinished:
-                if len(match["matchResults"]) == match["matchResults"][-1]["resultOrderID"]:
-                    team1_score = match["matchResults"][-1]["pointsTeam1"]
-                    team2_score = match["matchResults"][-1]["pointsTeam2"]
-
-                else:
-                    team1_score = match["matchResults"][1]["pointsTeam1"]
-                    team2_score = match["matchResults"][1]["pointsTeam2"]
-            else:
-                team1_score, team2_score = None, None
+        for match in matchdata:           
+            team1_score, team2_score = get_scores(match)
 
             match_entry = Match(
                 id=match["matchID"],
@@ -176,7 +164,7 @@ def insert_or_update_matches_to_db(db_session):
                 team1_score=team1_score,
                 team2_score=team2_score,
                 matchDateTime=match["matchDateTime"],
-                matchIsFinished=matchFinished,
+                matchIsFinished=match["matchIsFinished"],
                 location=match["location"]["locationCity"],
                 lastUpdateDateTime=match["lastUpdateDateTime"]
             )
@@ -184,6 +172,23 @@ def insert_or_update_matches_to_db(db_session):
             db_session.merge(match_entry)  # Use merge to insert or update
 
     db_session.commit()
+
+
+def get_scores(match_API):
+    # Local variable if match is finished
+    matchFinished = match_API["matchIsFinished"]
+    if matchFinished:
+        if len(match_API["matchResults"]) == match_API["matchResults"][-1]["resultOrderID"]:
+            team1_score = match_API["matchResults"][-1]["pointsTeam1"]
+            team2_score = match_API["matchResults"][-1]["pointsTeam2"]
+
+        else:
+            team1_score = match_API["matchResults"][1]["pointsTeam1"]
+            team2_score = match_API["matchResults"][1]["pointsTeam2"]
+    else:
+        team1_score, team2_score = None, None
+
+    return team1_score, team2_score
 
 
 def update_user_scores(db_session):
@@ -354,8 +359,7 @@ def delete_user_and_predictions(user_id, db_session):
 def update_match_score_for_live_scores(db_session, match_API):
     match = match_API
 
-    team1_score = match["matchResults"][-1]["pointsTeam1"] if match["matchResults"] else None
-    team2_score = match["matchResults"][-1]["pointsTeam2"] if match["matchResults"] else None
+    team1_score, team2_score = get_scores(match)
 
     match_entry = Match(
         id=match["matchID"],
@@ -563,6 +567,7 @@ def update_match_if_needed(db_session, unfinished_match):
 
 
 def update_match_in_db(matchdata_API, match_db, db_session):
+    """ Deprecated function, needs updating for use """
     print("Updating match: ", matchdata_API["matchID"])
 
     # Prepare update dictionary
