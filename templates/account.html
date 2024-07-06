@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+
+{% block title %}
+    Account
+{% endblock %}
+
+{% block main %}
+
+<nav>
+    <ul>
+        <li><a href="{{ url_for('account') }}">Overview</a></li>
+        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Delete Account</a></li>
+        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Change Password</a></li>
+        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Change Username</a></li>
+    </ul>
+    <form id="submenu-form" method="post" action="{{ url_for('account') }}">
+        <input type="hidden" name="submenu" value="overview" id="submenu-input">
+    </form>
+</nav>
+<div>
+</div>
+</html>
+<script>
+function setSubmenu(submenu) {
+    document.getElementById('submenu-input').value = submenu;
+    document.getElementById('submenu-form').submit();
+}
+</script>
+
+
+{% endblock %}

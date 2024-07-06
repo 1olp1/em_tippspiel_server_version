@@ -1,4 +1,4 @@
-from flask import flash, redirect, render_template, request, session
+from flask import flash, redirect, render_template, request, session, url_for
 import time
 from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
@@ -262,6 +262,39 @@ def logout():
 
     # Redirect user to login form
     return redirect("/")
+
+
+@app.route("/account", methods=["GET", "POST"])
+def account():
+    if 'submenu' not in session:
+        session['submenu'] = 'overview'
+    
+    if request.method == "POST":
+        submenu = request.form.get('submenu')
+        if submenu:
+            session['submenu'] = submenu
+    
+    return render_template("account.html", submenu=session['submenu'])
+
+@app.route("/account/delete", methods=["POST"])
+def delete_account():
+    # Add logic to delete the account
+    flash('Account deleted successfully.', 'success')
+    return redirect(url_for('account'))
+
+@app.route("/account/change_password", methods=["POST"])
+def change_password():
+    new_password = request.form.get('new_password')
+    # Add logic to change the password
+    flash('Password changed successfully.', 'success')
+    return redirect(url_for('account'))
+
+@app.route("/account/change_username", methods=["POST"])
+def change_username():
+    new_username = request.form.get('new_username')
+    # Add logic to change the username
+    flash('Username changed successfully.', 'success')
+    return redirect(url_for('account'))
 
 
 @app.route("/register", methods=["GET", "POST"])

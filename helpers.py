@@ -156,9 +156,17 @@ def insert_or_update_matches_to_db(db_session):
         for match in matchdata:
             # Local variable if match is finished
             matchFinished = match["matchIsFinished"]
+            
+            if matchFinished:
+                if len(match["matchResults"]) == match["matchResults"][-1]["resultOrderID"]:
+                    team1_score = match["matchResults"][-1]["pointsTeam1"]
+                    team2_score = match["matchResults"][-1]["pointsTeam2"]
 
-            team1_score = match["matchResults"][-1]["pointsTeam1"] if matchFinished else None   # -1 ensures that only final score is saved
-            team2_score = match["matchResults"][-1]["pointsTeam2"] if matchFinished else None
+                else:
+                    team1_score = match["matchResults"][1]["pointsTeam1"]
+                    team2_score = match["matchResults"][1]["pointsTeam2"]
+            else:
+                team1_score, team2_score = None, None
 
             match_entry = Match(
                 id=match["matchID"],
@@ -332,6 +340,15 @@ def process_predictions(valid_matches, session, db_session, request):
     else:
         flash(error_message, "error")
 
+
+def delete_user_and_predictions(user_id, db_session):
+    # Delete predictions from the user
+    db_session.query(Prediction).filter_by(user_id=user_id).delete()
+
+    # Delete the user
+    db_session.query(User).filter_by(id=user_id).delete()
+
+    db_session.commit()
 
 
 def update_match_score_for_live_scores(db_session, match_API):
