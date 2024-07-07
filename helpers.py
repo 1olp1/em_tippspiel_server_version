@@ -428,9 +428,15 @@ def get_insights(db_session):
     # User rank
     subquery = db_session.query(
         User.id,
-        func.row_number().over(order_by=User.total_points.desc()).label('rank')
+        func.row_number().over(
+            order_by=[
+                desc(User.total_points),
+                desc(User.correct_result),
+                desc(User.correct_goal_diff),
+                desc(User.correct_tendency)
+            ]
+        ).label('rank')
     ).subquery()
-
     rank = db_session.query(subquery.c.rank).filter(subquery.c.id == user_id).scalar()
 
     # Base statistics for the user
