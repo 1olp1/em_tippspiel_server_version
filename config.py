@@ -3,6 +3,7 @@ from flask_session import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
+from datetime import timedelta
 import os
 
 app = Flask(__name__)
@@ -10,6 +11,8 @@ app = Flask(__name__)
 # Configure session to use filesystem (instead of signed cookies)
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "filesystem"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)  # Keep users logged in for 30 days
+app.config["SESSION_FILE_THRESHOLD"] = 100  # Limits the number of session files before they are pruned
 app.config["DEBUG"] = True
 Session(app)
 

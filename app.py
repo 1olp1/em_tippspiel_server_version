@@ -1,5 +1,6 @@
 from flask import flash, redirect, render_template, request, session, url_for
 import time
+import os
 from sqlalchemy import func, desc
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import OperationalError
@@ -235,6 +236,9 @@ def login():
 
                 # Remember which user has logged in
                 session["user_id"] = user.id
+                session["username"] = user.username
+                
+                session.permanent = True  # Make the session permanent (user can stay logged in for longer times)
 
                 update_matches_and_scores(db_session)   # TODO updating tables?
 
@@ -305,9 +309,16 @@ def register():
                 username = request.form.get("username")
                 password = request.form.get("password")
                 password_repetition = request.form.get("confirmation")
+                access_code = request.form.get("accesscode")
+                print("eingegebener access_code")
+                print("gespeichert access_code: ", os.getenv("ACCESSCODE_TIPPSPIEL"))
 
                 if not username:
                     flash("Kein Benutzername angegeben", 'error')
+                    return redirect("/register")
+
+                if not access_code or access_code != os.getenv('ACCESSCODE_TIPPSPIEL'):
+                    flash("Zugangscode fehlt/ungültig", "error")
                     return redirect("/register")
 
                 # Check if username already exists
@@ -342,3 +353,20 @@ def register():
     except OperationalError as e:
         app.logger.error(f"Database connection error: {e}")
         return "Database connection error, please try again later.", 500
+
+
+@app.route("/accesscode", methods=["POST"])
+def accesscode():
+    accesscode = request.form["accesscode"]
+    
+    # Validate the access code here
+    
+    if validate_accesscode(accesscode):
+        return redirect(url_for("success"))  # Redirect to a success page
+    else:
+        return "Invalid Access Code", 400  # Return an error message
+    
+
+def validate_accesscode(accesscode):
+    # Implement your access code validation logic here
+    return accesscode == os.getenv("ACCESSCODE_TIPPSPIEL")

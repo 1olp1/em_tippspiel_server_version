@@ -6,26 +6,28 @@
 
 {% block main %}
 
-<nav>
-    <ul>
-        <li><a href="{{ url_for('account') }}">Overview</a></li>
-        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Delete Account</a></li>
-        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Change Password</a></li>
-        <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Change Username</a></li>
-    </ul>
-    <form id="submenu-form" method="post" action="{{ url_for('account') }}">
-        <input type="hidden" name="submenu" value="overview" id="submenu-input">
-    </form>
-</nav>
-<div>
+<div class="card rounded-4" style="width: 20rem;">
+        <div class="card-body">
+            <h4 class="card-title" style="text-align: center;"> Accountverwaltung </h4>
+            <div class="stats"> Nachfolgend können der Account gelöscht oder das Passwort oder der Benutzernamen geändert werden (noch nicht implementiert). </div>
+            <p></p>
+            <ul>
+                <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Account löschen</a></li>
+                <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Passwort ändern</a></li>
+                <li><a href="#" onclick="document.getElementById('submenu-form').submit();">Benutzername ändern</a></li>
+                
+            </ul>
+            <form id="submenu-form" method="post" action="{{ url_for('account') }}">
+                <input type="hidden" name="submenu" value="overview" id="submenu-input">
+            </form>
+    </div>
 </div>
-</html>
+
 <script>
 function setSubmenu(submenu) {
     document.getElementById('submenu-input').value = submenu;
     document.getElementById('submenu-form').submit();
 }
 </script>
-
 
 {% endblock %}

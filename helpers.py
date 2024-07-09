@@ -175,9 +175,8 @@ def insert_or_update_matches_to_db(db_session):
 
 
 def get_scores(match_API):
-    # Local variable if match is finished
-    matchFinished = match_API["matchIsFinished"]
-    if matchFinished:
+
+    if match_API["matchResults"]:
         if len(match_API["matchResults"]) == match_API["matchResults"][-1]["resultOrderID"]:
             team1_score = match_API["matchResults"][-1]["pointsTeam1"]
             team2_score = match_API["matchResults"][-1]["pointsTeam2"]
@@ -359,8 +358,11 @@ def delete_user_and_predictions(user_id, db_session):
 def update_match_score_for_live_scores(db_session, match_API):
     match = match_API
 
+    print("live match to update: ", match["matchID"])
+
     team1_score, team2_score = get_scores(match)
 
+    print("Live scores: ", team1_score, ":", team2_score)
     match_entry = Match(
         id=match["matchID"],
         team1_score=team1_score,
